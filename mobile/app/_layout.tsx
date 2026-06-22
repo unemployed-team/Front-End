@@ -1,0 +1,25 @@
+import { Stack } from "expo-router";
+import { StatusBar } from "expo-status-bar";
+import { colors } from "@/theme/colors";
+
+export default function RootLayout() {
+  return (
+    <>
+      <StatusBar style="dark" />
+      <Stack
+        screenOptions={{
+          headerShown: false,
+          contentStyle: { backgroundColor: colors.background },
+        }}
+      >
+        <Stack.Screen name="(tabs)" />
+        <Stack.Screen name="login" />
+        <Stack.Screen name="onboarding" />
+        <Stack.Screen name="building/[id]" />
+        <Stack.Screen name="my/bookmarks" />
+        <Stack.Screen name="my/settings" />
+        <Stack.Screen name="report/qr/[buildingId]" />
+      </Stack>
+    </>
+  );
+}

@@ -1,0 +1,32 @@
+{
+  "expo": {
+    "name": "SafeRoom AI",
+    "slug": "saferoom-ai",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "scheme": "saferoom",
+    "userInterfaceStyle": "light",
+    "newArchEnabled": true,
+    "splash": {
+      "backgroundColor": "#0d9488"
+    },
+    "android": {
+      "package": "com.saferoom.ai",
+      "adaptiveIcon": {
+        "backgroundColor": "#0d9488"
+      },
+      "permissions": [
+        "ACCESS_COARSE_LOCATION",
+        "ACCESS_FINE_LOCATION"
+      ]
+    },
+    "plugins": [
+      "expo-router",
+      "expo-asset",
+      "expo-font"
+    ],
+    "experiments": {
+      "typedRoutes": true
+    }
+  }
+}

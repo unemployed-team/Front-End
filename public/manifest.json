@@ -1,0 +1,10 @@
+{
+  "name": "SafeRoom AI",
+  "short_name": "SafeRoom",
+  "description": "청년 주거 안전 플랫폼",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#f8fafc",
+  "theme_color": "#0d9488",
+  "orientation": "portrait"
+}

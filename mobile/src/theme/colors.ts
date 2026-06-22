@@ -1,0 +1,30 @@
+export const colors = {
+  background: "#f8fafc",
+  foreground: "#0f172a",
+  slate: {
+    50: "#f8fafc",
+    100: "#f1f5f9",
+    200: "#e2e8f0",
+    300: "#cbd5e1",
+    400: "#94a3b8",
+    500: "#64748b",
+    600: "#475569",
+    700: "#334155",
+    900: "#0f172a",
+  },
+  saferoom: {
+    50: "#f0fdf9",
+    100: "#ccfbef",
+    500: "#14b8a6",
+    600: "#0d9488",
+    700: "#0f766e",
+  },
+  risk: {
+    safe: "#22c55e",
+    caution: "#f59e0b",
+    danger: "#ef4444",
+  },
+  kakao: "#FEE500",
+  naver: "#03C75A",
+  white: "#ffffff",
+} as const;
