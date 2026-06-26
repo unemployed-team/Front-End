@@ -1,26 +1,25 @@
 "use client";
 
+import { useMemo } from "react";
 import { MobileLayout } from "@/components/layout/MobileLayout";
 import { Header } from "@/components/layout/Header";
 import { useAppStore } from "@/store/app-store";
+import { SafeRoomEngine } from "@/ai";
 import {
   cn,
   getRiskGradeBg,
   getRiskGradeColor,
   getRiskGradeLabel,
 } from "@/lib/utils";
-import { GitCompare, X, Trophy } from "lucide-react";
+import { GitCompare, X, Trophy, Sparkles } from "lucide-react";
 import Link from "next/link";
 
 export default function ComparePage() {
   const { compareSelection, toggleCompare, clearCompare } = useAppStore();
 
-  const safest = compareSelection.reduce<(typeof compareSelection)[0] | null>(
-    (best, item) => {
-      if (!best || item.report.totalScore < best.report.totalScore) return item;
-      return best;
-    },
-    null
+  const compareResult = useMemo(
+    () => SafeRoomEngine.compare(compareSelection),
+    [compareSelection]
   );
 
   return (
@@ -56,6 +55,17 @@ export default function ComparePage() {
           </div>
         ) : (
           <div className="space-y-4">
+            {compareResult.safestBuildingId && (
+              <div className="flex items-center gap-2 rounded-xl bg-saferoom-50 px-4 py-3 text-sm text-saferoom-800">
+                <Sparkles className="h-4 w-4" />
+                AI 추천:{" "}
+                <span className="font-bold">
+                  {compareResult.items.find((i) => i.isSafest)?.adminDong}
+                </span>
+                이 종합 안전 지표가 가장 우수합니다
+              </div>
+            )}
+
             <p className="text-xs text-slate-500">
               {compareSelection.length}/3 선택 · HRI Score 기준 비교
             </p>
@@ -67,18 +77,23 @@ export default function ComparePage() {
                     <th className="py-2 text-left text-xs font-medium text-slate-500">
                       지표
                     </th>
-                    {compareSelection.map((item) => (
-                      <th key={item.building.id} className="px-2 py-2 text-center">
+                    {compareResult.items.map((item) => (
+                      <th key={item.buildingId} className="px-2 py-2 text-center">
                         <div className="flex flex-col items-center gap-1">
-                          {safest?.building.id === item.building.id && (
+                          {item.isSafest && (
                             <Trophy className="h-3.5 w-3.5 text-risk-caution" />
                           )}
                           <span className="max-w-[80px] truncate text-xs font-semibold text-slate-900">
-                            {item.building.adminDong}
+                            {item.adminDong}
                           </span>
                           <button
                             type="button"
-                            onClick={() => toggleCompare(item)}
+                            onClick={() => {
+                              const full = compareSelection.find(
+                                (c) => c.building.id === item.buildingId
+                              );
+                              if (full) toggleCompare(full);
+                            }}
                             className="text-slate-400"
                           >
                             <X className="h-3 w-3" />
@@ -89,59 +104,31 @@ export default function ComparePage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {[
-                    {
-                      label: "HRI Score",
-                      get: (i: (typeof compareSelection)[0]) => i.report.totalScore,
-                      format: (v: number) => String(v),
-                      lowerBetter: true,
-                    },
-                    {
-                      label: "등급",
-                      get: (i: (typeof compareSelection)[0]) => i.report.grade,
-                      format: (v: string) => getRiskGradeLabel(v as "safe" | "caution" | "danger"),
-                    },
-                    {
-                      label: "미반환 위험",
-                      get: (i: (typeof compareSelection)[0]) =>
-                        i.report.depositReturnRiskPercent,
-                      format: (v: number) => `${v}%`,
-                      lowerBetter: true,
-                    },
-                    {
-                      label: "전세가율",
-                      get: (i: (typeof compareSelection)[0]) => i.report.jeonseRatio,
-                      format: (v: number) => `${v.toFixed(1)}%`,
-                    },
-                  ].map((row) => (
-                    <tr key={row.label} className="border-b border-slate-100">
-                      <td className="py-3 text-xs text-slate-600">{row.label}</td>
-                      {compareSelection.map((item) => {
-                        const value = row.get(item);
+                  {compareResult.comparisonMatrix.map((row) => (
+                    <tr key={row.metric} className="border-b border-slate-100">
+                      <td className="py-3 text-xs text-slate-600">{row.metric}</td>
+                      {compareResult.items.map((item) => {
+                        const value = row.values[item.buildingId];
+                        const numericValues = compareResult.items
+                          .map((i) => row.values[i.buildingId])
+                          .filter((v): v is number => typeof v === "number");
                         const isBest =
-                          safest &&
-                          row.lowerBetter !== undefined &&
-                          row.get(safest) === value &&
-                          (typeof value === "number"
-                            ? value ===
-                              Math.min(
-                                ...compareSelection.map((c) => row.get(c) as number)
-                              )
-                            : false);
+                          row.lowerIsBetter &&
+                          typeof value === "number" &&
+                          numericValues.length > 0 &&
+                          value === Math.min(...numericValues);
 
                         return (
                           <td
-                            key={item.building.id}
+                            key={item.buildingId}
                             className={cn(
                               "px-2 py-3 text-center font-semibold",
                               isBest && "text-saferoom-600",
-                              row.label === "등급" &&
+                              row.metric === "등급" &&
                                 getRiskGradeColor(item.report.grade)
                             )}
                           >
-                            {typeof value === "number" || typeof value === "string"
-                              ? row.format(value as never)
-                              : value}
+                            {value}
                           </td>
                         );
                       })}
@@ -152,19 +139,20 @@ export default function ComparePage() {
             </div>
 
             <div className="grid gap-3">
-              {compareSelection.map((item) => (
+              {compareResult.items.map((item) => (
                 <Link
-                  key={item.building.id}
-                  href={`/building/${item.building.id}`}
+                  key={item.buildingId}
+                  href={`/building/${item.buildingId}`}
                   className={cn(
                     "block rounded-xl border p-4 transition",
-                    safest?.building.id === item.building.id
+                    item.isSafest
                       ? "border-saferoom-400 bg-saferoom-50"
                       : "border-slate-200 bg-white"
                   )}
                 >
                   <p className="text-sm font-semibold text-slate-900">
-                    {item.building.roadAddress}
+                    {compareSelection.find((c) => c.building.id === item.buildingId)
+                      ?.building.roadAddress}
                   </p>
                   <div
                     className={cn(
@@ -175,6 +163,11 @@ export default function ComparePage() {
                   >
                     HRI {item.report.totalScore} · {getRiskGradeLabel(item.report.grade)}
                   </div>
+                  {item.isSafest && (
+                    <p className="mt-2 text-xs font-medium text-saferoom-700">
+                      {item.highlightMetrics.join(" · ")}
+                    </p>
+                  )}
                 </Link>
               ))}
             </div>

@@ -2,8 +2,10 @@
 
 import { useEffect, useRef, useState } from "react";
 import type { Building, MapCluster } from "@/types";
-import { getRiskGrade, getRiskGradeLabel } from "@/lib/utils";
-import { MOCK_CLUSTERS } from "@/lib/constants/mock-data";
+import { getRiskGradeLabel } from "@/lib/utils";
+import { getBuildingScores } from "@/lib/api/buildings";
+import { SafeRoomEngine } from "@/ai";
+import { buildMockAnalysisInput } from "@/lib/constants/mock-analysis-data";
 import Link from "next/link";
 
 declare global {
@@ -82,12 +84,19 @@ export function KakaoMap({
     if (!mapInstance.current || !mapReady) return;
     const map = mapInstance.current;
 
+    const points = buildings.map((b) => ({
+      building: b,
+      report: SafeRoomEngine.analyzeBuilding(buildMockAnalysisInput(b)).report,
+    }));
+
     if (currentZoom > 6) {
-      renderClusters(map, MOCK_CLUSTERS);
+      const clusters = SafeRoomEngine.cluster(points, 20 - currentZoom);
+      renderClusters(map, clusters);
     } else {
-      renderBuildingPins(map, buildings, onBuildingClick);
+      const scores = getBuildingScores(buildings);
+      renderBuildingPins(map, buildings, scores, onBuildingClick);
     }
-  }, [mapReady, currentZoom, buildings, onBuildingClick]);
+  }, [mapReady, currentZoom, buildings, onBuildingClick, showHeatmap]);
 
   if (!process.env.NEXT_PUBLIC_KAKAO_APP_KEY ||
       process.env.NEXT_PUBLIC_KAKAO_APP_KEY === "your_kakao_javascript_key") {
@@ -124,19 +133,20 @@ function renderClusters(map: kakao.maps.Map, clusters: MapCluster[]) {
 function renderBuildingPins(
   map: kakao.maps.Map,
   buildings: Building[],
+  scores: Map<string, { score: number; grade: string }>,
   onBuildingClick?: (building: Building) => void
 ) {
-  buildings.forEach((building, i) => {
-    const seed = building.id.charCodeAt(building.id.length - 1);
-    const score = 30 + seed * 7 + (building.isViolation ? 20 : 0);
-    const grade = getRiskGrade(score);
+  buildings.forEach((building) => {
+    const data = scores.get(building.id);
+    const score = data?.score ?? 50;
+    const grade = data?.grade ?? "caution";
 
     const el = document.createElement("a");
     el.href = `/building/${building.id}`;
     el.className =
       "flex items-center gap-1 rounded-full px-2 py-1 text-xs font-semibold text-white shadow-md";
     el.style.backgroundColor = scoreToColor(score);
-    el.textContent = getRiskGradeLabel(grade);
+    el.textContent = `${getRiskGradeLabel(grade as "safe" | "caution" | "danger")} ${score}`;
     el.onclick = (e) => {
       if (onBuildingClick) {
         e.preventDefault();
@@ -159,6 +169,8 @@ function FallbackMap({
   buildings: Building[];
   showHeatmap: boolean;
 }) {
+  const scores = getBuildingScores(buildings);
+
   return (
     <div className="relative h-full w-full overflow-hidden bg-slate-200">
       <div className="absolute inset-0 bg-gradient-to-br from-saferoom-100 to-slate-300" />
@@ -180,9 +192,9 @@ function FallbackMap({
       )}
       <div className="absolute inset-0 flex items-center justify-center">
         <div className="grid grid-cols-2 gap-3 p-4">
-          {buildings.slice(0, 4).map((b, i) => {
-            const seed = b.id.charCodeAt(b.id.length - 1);
-            const score = 30 + seed * 7;
+          {buildings.slice(0, 4).map((b) => {
+            const data = scores.get(b.id);
+            const score = data?.score ?? 50;
             return (
               <Link
                 key={b.id}

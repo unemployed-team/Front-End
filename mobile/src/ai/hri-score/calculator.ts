@@ -50,9 +50,9 @@ function buildCategoryScore(
 }
 
 export function calculateHRIScore(input: HRIInput): HRIReport {
-  const verifiedCount = input.fieldReports.filter((r) => r.verified).length;
-  const weights = adjustWeightsByFieldReports(verifiedCount);
-  const fieldPenalty = getFieldReportPenalty(verifiedCount);
+  const verifiedReports = input.fieldReports.filter((r) => r.verified);
+  const weights = adjustWeightsByFieldReports(input.fieldReports);
+  const fieldPenalty = getFieldReportPenalty(input.fieldReports);
 
   const constructionScore = scoreConstruction({ building: input.building });
   const marketScore = scoreMarket({
@@ -107,7 +107,7 @@ export function calculateHRIScore(input: HRIInput): HRIReport {
     districtAvgJeonseRatio,
     hasActiveAuction: input.hasActiveAuction,
     ltv: input.officialPrice > 0 ? input.mortgageAmount / input.officialPrice : 0,
-    fieldReportCount: verifiedCount,
+    fieldReportCount: verifiedReports.length,
     priceHistory: input.priceHistory ?? [],
     contractYears: 2,
   });
@@ -131,7 +131,9 @@ export function calculateHRIScore(input: HRIInput): HRIReport {
         : ["경매 이력 없음"]),
     ]),
     buildCategoryScore("safety", safetyScore, weights.safety, [
-      verifiedCount > 0 ? `현장 제보 ${verifiedCount}건 반영` : "현장 제보 없음",
+      verifiedReports.length > 0
+        ? `현장 제보 ${verifiedReports.length}건 반영`
+        : "현장 제보 없음",
     ]),
   ];
 

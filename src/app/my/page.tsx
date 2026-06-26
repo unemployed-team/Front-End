@@ -6,14 +6,15 @@ import { MobileLayout } from "@/components/layout/MobileLayout";
 import { Header } from "@/components/layout/Header";
 import { useAuthStore } from "@/store/auth-store";
 import { useAppStore } from "@/store/app-store";
-import { simulateAuctionRecovery, getContractExpiryAlerts } from "@/ai/simulator/auction-recovery";
+import { SafeRoomEngine } from "@/ai";
+import { simulateAuctionRecovery } from "@/ai/simulator/auction-recovery";
 import { cn, formatCurrency, getDaysUntil } from "@/lib/utils";
+import { DashboardAlertsPanel } from "@/components/my/DashboardAlertsPanel";
 import {
   Bookmark,
   FileText,
   LogIn,
   Settings,
-  AlertTriangle,
   ChevronRight,
 } from "lucide-react";
 
@@ -22,13 +23,7 @@ export default function MyPage() {
   const { bookmarks, contracts } = useAppStore();
   const [showContractForm, setShowContractForm] = useState(false);
 
-  const expiryAlerts = contracts.flatMap((c) =>
-    getContractExpiryAlerts(c.endDate).map((msg) => ({
-      id: `${c.id}-alert`,
-      message: msg,
-      buildingId: c.buildingId,
-    }))
-  );
+  const dashboardAlerts = SafeRoomEngine.screenAlerts({ contracts, bookmarks });
 
   if (!isAuthenticated) {
     return (
@@ -74,21 +69,7 @@ export default function MyPage() {
           )}
         </div>
 
-        {expiryAlerts.length > 0 && (
-          <div className="rounded-xl border border-risk-caution/30 bg-risk-caution/5 p-4">
-            <div className="flex items-center gap-2 text-sm font-semibold text-risk-caution">
-              <AlertTriangle className="h-4 w-4" />
-              계약 만기 알림
-            </div>
-            <ul className="mt-2 space-y-1">
-              {expiryAlerts.map((alert) => (
-                <li key={alert.id} className="text-xs text-slate-700">
-                  · {alert.message}
-                </li>
-              ))}
-            </ul>
-          </div>
-        )}
+        <DashboardAlertsPanel alerts={dashboardAlerts} />
 
         <Link
           href="/my/bookmarks"

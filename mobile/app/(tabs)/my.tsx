@@ -13,11 +13,10 @@ import { Ionicons } from "@expo/vector-icons";
 import { Header } from "@/components/layout/Header";
 import { useAuthStore } from "@/store/auth-store";
 import { useAppStore } from "@/store/app-store";
-import {
-  simulateAuctionRecovery,
-  getContractExpiryAlerts,
-} from "@/ai/simulator/auction-recovery";
+import { SafeRoomEngine } from "@/ai";
+import { simulateAuctionRecovery } from "@/ai/simulator/auction-recovery";
 import { formatCurrency, getDaysUntil } from "@/lib/utils";
+import { DashboardAlertsPanel } from "@/components/my/DashboardAlertsPanel";
 import { colors } from "@/theme/colors";
 
 export default function MyScreen() {
@@ -26,12 +25,7 @@ export default function MyScreen() {
   const { bookmarks, contracts } = useAppStore();
   const [showContractForm, setShowContractForm] = useState(false);
 
-  const expiryAlerts = contracts.flatMap((c) =>
-    getContractExpiryAlerts(c.endDate).map((msg) => ({
-      id: `${c.id}-alert`,
-      message: msg,
-    }))
-  );
+  const dashboardAlerts = SafeRoomEngine.screenAlerts({ contracts, bookmarks });
 
   if (!isAuthenticated) {
     return (
@@ -76,19 +70,7 @@ export default function MyScreen() {
           )}
         </View>
 
-        {expiryAlerts.length > 0 && (
-          <View style={styles.alertCard}>
-            <View style={styles.alertHeader}>
-              <Ionicons name="warning" size={16} color={colors.risk.caution} />
-              <Text style={styles.alertTitle}>계약 만기 알림</Text>
-            </View>
-            {expiryAlerts.map((alert) => (
-              <Text key={alert.id} style={styles.alertItem}>
-                · {alert.message}
-              </Text>
-            ))}
-          </View>
-        )}
+        <DashboardAlertsPanel alerts={dashboardAlerts} />
 
         <Pressable
           style={styles.menuItem}

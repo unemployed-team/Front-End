@@ -1,15 +1,28 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { MobileLayout } from "@/components/layout/MobileLayout";
 import { KakaoMap } from "@/components/map/KakaoMap";
 import { MOCK_BUILDINGS } from "@/lib/constants/mock-data";
+import { SafeRoomEngine } from "@/ai";
 import { Layers, MapPin } from "lucide-react";
 import Link from "next/link";
 
 export default function HomePage() {
   const [showHeatmap, setShowHeatmap] = useState(true);
   const [showUniversity, setShowUniversity] = useState(false);
+
+  const buildings = useMemo(() => {
+    if (!showUniversity) return MOCK_BUILDINGS;
+    const zones = ["keimyung", "kyungpook", "yeungnam"] as const;
+    const filtered = new Map<string, (typeof MOCK_BUILDINGS)[0]>();
+    for (const zone of zones) {
+      for (const b of SafeRoomEngine.filterUniversity(MOCK_BUILDINGS, zone)) {
+        filtered.set(b.id, b);
+      }
+    }
+    return Array.from(filtered.values());
+  }, [showUniversity]);
 
   return (
     <MobileLayout>
@@ -29,6 +42,10 @@ export default function HomePage() {
               주소 검색
             </Link>
           </div>
+
+          <p className="mt-2 text-[11px] leading-relaxed text-slate-400">
+            공공데이터를 AI로 분석해 원룸·오피스텔 주거 위험도를 0~100점으로 산출합니다
+          </p>
 
           <div className="mt-3 flex gap-2">
             <button
@@ -60,7 +77,7 @@ export default function HomePage() {
 
         <div className="flex-1">
           <KakaoMap
-            buildings={MOCK_BUILDINGS}
+            buildings={buildings}
             showHeatmap={showHeatmap}
             showUniversityLayer={showUniversity}
           />

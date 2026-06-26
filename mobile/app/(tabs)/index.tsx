@@ -1,16 +1,29 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { View, Text, Pressable, StyleSheet } from "react-native";
 import { useRouter } from "expo-router";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { BuildingMap } from "@/components/map/BuildingMap";
 import { MOCK_BUILDINGS } from "@/lib/constants/mock-data";
+import { SafeRoomEngine } from "@/ai";
 import { colors } from "@/theme/colors";
 
 export default function HomeScreen() {
   const router = useRouter();
   const [showHeatmap, setShowHeatmap] = useState(true);
   const [showUniversity, setShowUniversity] = useState(false);
+
+  const buildings = useMemo(() => {
+    if (!showUniversity) return MOCK_BUILDINGS;
+    const zones = ["keimyung", "kyungpook", "yeungnam"] as const;
+    const filtered = new Map<string, (typeof MOCK_BUILDINGS)[0]>();
+    for (const zone of zones) {
+      for (const b of SafeRoomEngine.filterUniversity(MOCK_BUILDINGS, zone)) {
+        filtered.set(b.id, b);
+      }
+    }
+    return Array.from(filtered.values());
+  }, [showUniversity]);
 
   return (
     <SafeAreaView style={styles.safe} edges={["top"]}>
@@ -29,6 +42,9 @@ export default function HomeScreen() {
             <Text style={styles.searchBtnText}>주소 검색</Text>
           </Pressable>
         </View>
+        <Text style={styles.desc}>
+          공공데이터를 AI로 분석해 원룸·오피스텔 주거 위험도를 0~100점으로 산출합니다
+        </Text>
         <View style={styles.filters}>
           <Pressable
             style={[styles.filterBtn, showHeatmap && styles.filterBtnActive]}
@@ -63,7 +79,7 @@ export default function HomeScreen() {
         </View>
       </View>
       <BuildingMap
-        buildings={MOCK_BUILDINGS}
+        buildings={buildings}
         showHeatmap={showHeatmap}
         showUniversityLayer={showUniversity}
       />
@@ -88,6 +104,12 @@ const styles = StyleSheet.create({
   },
   title: { fontSize: 18, fontWeight: "900", color: colors.saferoom[700] },
   subtitle: { fontSize: 12, color: colors.slate[500], marginTop: 2 },
+  desc: {
+    fontSize: 11,
+    color: colors.slate[400],
+    marginTop: 8,
+    lineHeight: 16,
+  },
   searchBtn: {
     backgroundColor: colors.saferoom[600],
     borderRadius: 12,

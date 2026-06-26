@@ -13,14 +13,19 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import * as Clipboard from "expo-clipboard";
 import { Header } from "@/components/layout/Header";
+import { AIAnalysisHeader } from "@/components/report/AIAnalysisHeader";
 import { HRIScoreCard } from "@/components/report/HRIScoreCard";
 import { CategoryBreakdown } from "@/components/report/CategoryBreakdown";
 import { RiskPredictionChart } from "@/components/report/RiskPredictionChart";
-import { getBuilding, getBuildingReport } from "@/lib/api/buildings";
+import { RiskExplanationCard } from "@/components/report/RiskExplanationCard";
+import { AuctionSimulationCard } from "@/components/report/AuctionSimulationCard";
+import { DataSourcesFooter } from "@/components/report/DataSourcesFooter";
+import { getBuilding, getBuildingAnalysis } from "@/lib/api/buildings";
 import { useAppStore } from "@/store/app-store";
 import { useAuthStore } from "@/store/auth-store";
 import { generateShareToken } from "@/lib/utils";
-import type { Building, HRIReport } from "@/types";
+import type { Building } from "@/types";
+import type { BuildingAnalysisResult } from "@/ai/types/analysis";
 import { colors } from "@/theme/colors";
 
 export default function BuildingReportScreen() {
@@ -30,21 +35,22 @@ export default function BuildingReportScreen() {
   const { bookmarks, addBookmark, removeBookmark, toggleCompare } = useAppStore();
 
   const [building, setBuilding] = useState<Building | null>(null);
-  const [report, setReport] = useState<HRIReport | null>(null);
+  const [analysis, setAnalysis] = useState<BuildingAnalysisResult | null>(null);
   const [loading, setLoading] = useState(true);
 
   const bookmark = bookmarks.find((b) => b.buildingId === id);
+  const report = analysis?.report;
 
   useEffect(() => {
     async function load() {
       if (!id) return;
       setLoading(true);
-      const [b, r] = await Promise.all([
+      const [b, a] = await Promise.all([
         getBuilding(id),
-        getBuildingReport(id),
+        getBuildingAnalysis(id),
       ]);
       setBuilding(b);
-      setReport(r);
+      setAnalysis(a);
       setLoading(false);
     }
     load();
@@ -81,13 +87,13 @@ export default function BuildingReportScreen() {
       <SafeAreaView style={styles.safe}>
         <View style={styles.center}>
           <ActivityIndicator color={colors.saferoom[600]} />
-          <Text style={styles.loadingText}>리포트 분석 중...</Text>
+          <Text style={styles.loadingText}>AI가 공공데이터를 분석 중...</Text>
         </View>
       </SafeAreaView>
     );
   }
 
-  if (!building || !report) {
+  if (!building || !analysis || !report) {
     return (
       <SafeAreaView style={styles.safe}>
         <Header title="건물 리포트" showBack />
@@ -125,6 +131,8 @@ export default function BuildingReportScreen() {
       />
 
       <ScrollView contentContainerStyle={styles.content}>
+        <AIAnalysisHeader />
+
         <View style={styles.addressCard}>
           <Ionicons name="shield" size={16} color={colors.saferoom[600]} />
           <View style={styles.addressText}>
@@ -133,9 +141,8 @@ export default function BuildingReportScreen() {
             <Text style={styles.meta}>
               {building.buildYear}년 건축 · {building.floors}층 ·{" "}
               {building.householdCount}세대
-              {building.isViolation && (
-                <Text style={styles.violation}> · 위반건축물</Text>
-              )}
+              {building.universityProximity ? " · 대학가 인근" : ""}
+              {building.isViolation ? " · 위반건축물" : ""}
             </Text>
           </View>
         </View>
@@ -143,6 +150,11 @@ export default function BuildingReportScreen() {
         <HRIScoreCard
           score={report.totalScore}
           grade={report.grade}
+          depositReturnRisk={report.depositReturnRiskPercent}
+        />
+
+        <RiskExplanationCard
+          explanations={analysis.riskExplanation}
           depositReturnRisk={report.depositReturnRiskPercent}
         />
 
@@ -178,6 +190,15 @@ export default function BuildingReportScreen() {
           )}
         </View>
 
+        {analysis.simulation && analysis.userDeposit && (
+          <AuctionSimulationCard
+            simulation={analysis.simulation}
+            deposit={analysis.userDeposit}
+          />
+        )}
+
+        <DataSourcesFooter />
+
         <View style={styles.actions}>
           <Pressable style={styles.actionBtn} onPress={handleShare}>
             <Ionicons name="share-outline" size={18} color={colors.slate[700]} />
@@ -198,7 +219,7 @@ export default function BuildingReportScreen() {
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: colors.background },
   center: { flex: 1, alignItems: "center", justifyContent: "center" },
-  loadingText: { marginTop: 12, color: colors.slate[500] },
+  loadingText: { marginTop: 12, color: colors.slate[500], fontSize: 14 },
   error: { padding: 32, textAlign: "center", color: colors.slate[500] },
   headerActions: { flexDirection: "row", gap: 8 },
   content: { padding: 16, gap: 16, paddingBottom: 32 },
@@ -215,7 +236,6 @@ const styles = StyleSheet.create({
   road: { fontSize: 14, fontWeight: "600", color: colors.slate[900] },
   jibun: { fontSize: 12, color: colors.slate[500], marginTop: 2 },
   meta: { fontSize: 12, color: colors.slate[600], marginTop: 8 },
-  violation: { color: colors.risk.danger, fontWeight: "600" },
   compareCard: {
     borderWidth: 1,
     borderColor: colors.slate[200],

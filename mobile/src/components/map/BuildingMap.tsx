@@ -3,15 +3,10 @@ import { View, StyleSheet } from "react-native";
 import MapView, { Marker, Circle, PROVIDER_GOOGLE } from "react-native-maps";
 import { useRouter } from "expo-router";
 import type { Building } from "@/types";
-import { generateMockHRIReport } from "@/ai/hri-score/calculator";
-import { scoreToMarkerColor } from "@/lib/utils";
+import { getBuildingScores } from "@/lib/api/buildings";
+import { UNIVERSITY_ZONES } from "@/ai/spatial/cluster";
+import { scoreToMarkerColor, getRiskGradeLabel } from "@/lib/utils";
 import { colors } from "@/theme/colors";
-
-const UNIVERSITY_ZONES = [
-  { name: "계명대", lat: 35.8531, lng: 128.4856 },
-  { name: "경북대", lat: 35.8903, lng: 128.6124 },
-  { name: "영남대", lat: 35.8714, lng: 128.6014 },
-];
 
 interface BuildingMapProps {
   buildings: Building[];
@@ -26,14 +21,7 @@ export function BuildingMap({
 }: BuildingMapProps) {
   const router = useRouter();
 
-  const buildingScores = useMemo(
-    () =>
-      buildings.map((b) => ({
-        building: b,
-        score: generateMockHRIReport(b).totalScore,
-      })),
-    [buildings]
-  );
+  const scores = useMemo(() => getBuildingScores(buildings), [buildings]);
 
   return (
     <View style={styles.container}>
@@ -48,7 +36,7 @@ export function BuildingMap({
         }}
       >
         {showUniversityLayer &&
-          UNIVERSITY_ZONES.map((zone) => (
+          Object.values(UNIVERSITY_ZONES).map((zone) => (
             <Circle
               key={zone.name}
               center={{ latitude: zone.lat, longitude: zone.lng }}
@@ -59,16 +47,21 @@ export function BuildingMap({
             />
           ))}
 
-        {buildingScores.map(({ building, score }) => (
-          <Marker
-            key={building.id}
-            coordinate={{ latitude: building.lat, longitude: building.lng }}
-            pinColor={showHeatmap ? scoreToMarkerColor(score) : colors.saferoom[600]}
-            title={building.adminDong}
-            description={`HRI ${score}`}
-            onPress={() => router.push(`/building/${building.id}`)}
-          />
-        ))}
+        {buildings.map((building) => {
+          const data = scores.get(building.id);
+          const score = data?.score ?? 50;
+          const grade = data?.grade ?? "caution";
+          return (
+            <Marker
+              key={building.id}
+              coordinate={{ latitude: building.lat, longitude: building.lng }}
+              pinColor={showHeatmap ? scoreToMarkerColor(score) : colors.saferoom[600]}
+              title={building.adminDong}
+              description={`HRI ${score} · ${getRiskGradeLabel(grade)}`}
+              onPress={() => router.push(`/building/${building.id}`)}
+            />
+          );
+        })}
       </MapView>
     </View>
   );

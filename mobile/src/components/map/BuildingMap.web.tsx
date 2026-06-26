@@ -2,7 +2,7 @@ import { useMemo } from "react";
 import { View, Text, Pressable, ScrollView, StyleSheet } from "react-native";
 import { useRouter } from "expo-router";
 import type { Building } from "@/types";
-import { generateMockHRIReport } from "@/ai/hri-score/calculator";
+import { getBuildingScores } from "@/lib/api/buildings";
 import { getRiskGradeLabel, scoreToMarkerColor } from "@/lib/utils";
 import { colors } from "@/theme/colors";
 
@@ -12,22 +12,14 @@ interface BuildingMapProps {
   showUniversityLayer?: boolean;
 }
 
-/** 웹 미리보기용 지도 대체 UI (에뮬레이터 없이 브라우저에서 확인) */
+/** 웹 미리보기용 지도 대체 UI */
 export function BuildingMap({
   buildings,
   showHeatmap = true,
   showUniversityLayer = false,
 }: BuildingMapProps) {
   const router = useRouter();
-
-  const buildingScores = useMemo(
-    () =>
-      buildings.map((b) => ({
-        building: b,
-        report: generateMockHRIReport(b),
-      })),
-    [buildings]
-  );
+  const scores = useMemo(() => getBuildingScores(buildings), [buildings]);
 
   return (
     <View style={styles.container}>
@@ -41,33 +33,38 @@ export function BuildingMap({
         )}
       </View>
       <ScrollView style={styles.list} contentContainerStyle={styles.listContent}>
-        {buildingScores.map(({ building, report }) => (
-          <Pressable
-            key={building.id}
-            style={styles.card}
-            onPress={() => router.push(`/building/${building.id}`)}
-          >
-            <View
-              style={[
-                styles.dot,
-                {
-                  backgroundColor: showHeatmap
-                    ? scoreToMarkerColor(report.totalScore)
-                    : colors.saferoom[600],
-                },
-              ]}
-            />
-            <View style={styles.cardBody}>
-              <Text style={styles.dong}>{building.adminDong}</Text>
-              <Text style={styles.address} numberOfLines={1}>
-                {building.roadAddress}
-              </Text>
-              <Text style={styles.score}>
-                HRI {report.totalScore} · {getRiskGradeLabel(report.grade)}
-              </Text>
-            </View>
-          </Pressable>
-        ))}
+        {buildings.map((building) => {
+          const data = scores.get(building.id);
+          const score = data?.score ?? 50;
+          const grade = data?.grade ?? "caution";
+          return (
+            <Pressable
+              key={building.id}
+              style={styles.card}
+              onPress={() => router.push(`/building/${building.id}`)}
+            >
+              <View
+                style={[
+                  styles.dot,
+                  {
+                    backgroundColor: showHeatmap
+                      ? scoreToMarkerColor(score)
+                      : colors.saferoom[600],
+                  },
+                ]}
+              />
+              <View style={styles.cardBody}>
+                <Text style={styles.dong}>{building.adminDong}</Text>
+                <Text style={styles.address} numberOfLines={1}>
+                  {building.roadAddress}
+                </Text>
+                <Text style={styles.score}>
+                  HRI {score} · {getRiskGradeLabel(grade)}
+                </Text>
+              </View>
+            </Pressable>
+          );
+        })}
       </ScrollView>
     </View>
   );

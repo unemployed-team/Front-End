@@ -1,9 +1,11 @@
+import { useMemo } from "react";
 import { View, Text, Pressable, ScrollView, StyleSheet } from "react-native";
 import { useRouter } from "expo-router";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { Header } from "@/components/layout/Header";
 import { useAppStore } from "@/store/app-store";
+import { SafeRoomEngine } from "@/ai";
 import {
   getRiskGradeBg,
   getRiskGradeColor,
@@ -15,12 +17,9 @@ export default function CompareScreen() {
   const router = useRouter();
   const { compareSelection, toggleCompare, clearCompare } = useAppStore();
 
-  const safest = compareSelection.reduce<(typeof compareSelection)[0] | null>(
-    (best, item) => {
-      if (!best || item.report.totalScore < best.report.totalScore) return item;
-      return best;
-    },
-    null
+  const compareResult = useMemo(
+    () => SafeRoomEngine.compare(compareSelection),
+    [compareSelection]
   );
 
   return (
@@ -52,53 +51,41 @@ export default function CompareScreen() {
           </View>
         ) : (
           <>
+            {compareResult.safestBuildingId && (
+              <View style={styles.aiBanner}>
+                <Ionicons name="sparkles" size={16} color={colors.saferoom[700]} />
+                <Text style={styles.aiBannerText}>
+                  AI 추천:{" "}
+                  <Text style={styles.aiBannerBold}>
+                    {compareResult.items.find((i) => i.isSafest)?.adminDong}
+                  </Text>
+                  이 종합 안전 지표가 가장 우수합니다
+                </Text>
+              </View>
+            )}
+
             <Text style={styles.meta}>
               {compareSelection.length}/3 선택 · HRI Score 기준 비교
             </Text>
 
-            {[
-              {
-                label: "HRI Score",
-                get: (i: (typeof compareSelection)[0]) => i.report.totalScore,
-                format: (v: number) => String(v),
-                lowerBetter: true,
-              },
-              {
-                label: "등급",
-                get: (i: (typeof compareSelection)[0]) => i.report.grade,
-                format: (v: string) =>
-                  getRiskGradeLabel(v as "safe" | "caution" | "danger"),
-              },
-              {
-                label: "미반환 위험",
-                get: (i: (typeof compareSelection)[0]) =>
-                  i.report.depositReturnRiskPercent,
-                format: (v: number) => `${v}%`,
-                lowerBetter: true,
-              },
-              {
-                label: "전세가율",
-                get: (i: (typeof compareSelection)[0]) => i.report.jeonseRatio,
-                format: (v: number) => `${v.toFixed(1)}%`,
-              },
-            ].map((row) => (
-              <View key={row.label} style={styles.row}>
-                <Text style={styles.rowLabel}>{row.label}</Text>
+            {compareResult.comparisonMatrix.map((row) => (
+              <View key={row.metric} style={styles.row}>
+                <Text style={styles.rowLabel}>{row.metric}</Text>
                 <View style={styles.rowValues}>
-                  {compareSelection.map((item) => {
-                    const value = row.get(item);
+                  {compareResult.items.map((item) => {
+                    const value = row.values[item.buildingId];
+                    const numericValues = compareResult.items
+                      .map((i) => row.values[i.buildingId])
+                      .filter((v): v is number => typeof v === "number");
                     const isBest =
-                      safest &&
-                      row.lowerBetter &&
-                      row.get(safest) === value &&
+                      row.lowerIsBetter &&
                       typeof value === "number" &&
-                      value ===
-                        Math.min(
-                          ...compareSelection.map((c) => row.get(c) as number)
-                        );
+                      numericValues.length > 0 &&
+                      value === Math.min(...numericValues);
+
                     return (
-                      <View key={item.building.id} style={styles.cell}>
-                        {safest?.building.id === item.building.id && (
+                      <View key={item.buildingId} style={styles.cell}>
+                        {item.isSafest && (
                           <Ionicons
                             name="trophy"
                             size={12}
@@ -109,16 +96,21 @@ export default function CompareScreen() {
                           style={[
                             styles.cellText,
                             isBest && { color: colors.saferoom[600] },
-                            row.label === "등급" && {
+                            row.metric === "등급" && {
                               color: getRiskGradeColor(item.report.grade),
                             },
                           ]}
                         >
-                          {typeof value === "number" || typeof value === "string"
-                            ? row.format(value as never)
-                            : String(value)}
+                          {value}
                         </Text>
-                        <Pressable onPress={() => toggleCompare(item)}>
+                        <Pressable
+                          onPress={() => {
+                            const full = compareSelection.find(
+                              (c) => c.building.id === item.buildingId
+                            );
+                            if (full) toggleCompare(full);
+                          }}
+                        >
                           <Ionicons name="close" size={14} color={colors.slate[400]} />
                         </Pressable>
                       </View>
@@ -128,19 +120,20 @@ export default function CompareScreen() {
               </View>
             ))}
 
-            {compareSelection.map((item) => {
+            {compareResult.items.map((item) => {
               const gradeStyle = getRiskGradeBg(item.report.grade);
-              const isSafest = safest?.building.id === item.building.id;
               return (
                 <Pressable
-                  key={item.building.id}
-                  style={[
-                    styles.card,
-                    isSafest && styles.cardHighlight,
-                  ]}
-                  onPress={() => router.push(`/building/${item.building.id}`)}
+                  key={item.buildingId}
+                  style={[styles.card, item.isSafest && styles.cardHighlight]}
+                  onPress={() => router.push(`/building/${item.buildingId}`)}
                 >
-                  <Text style={styles.cardAddress}>{item.building.roadAddress}</Text>
+                  <Text style={styles.cardAddress}>
+                    {
+                      compareSelection.find((c) => c.building.id === item.buildingId)
+                        ?.building.roadAddress
+                    }
+                  </Text>
                   <View
                     style={[
                       styles.badge,
@@ -160,6 +153,11 @@ export default function CompareScreen() {
                       {getRiskGradeLabel(item.report.grade)}
                     </Text>
                   </View>
+                  {item.isSafest && (
+                    <Text style={styles.highlight}>
+                      {item.highlightMetrics.join(" · ")}
+                    </Text>
+                  )}
                 </Pressable>
               );
             })}
@@ -196,6 +194,17 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
   },
   searchLinkText: { fontSize: 14, fontWeight: "600", color: colors.white },
+  aiBanner: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    backgroundColor: colors.saferoom[50],
+    borderRadius: 12,
+    padding: 12,
+    marginBottom: 12,
+  },
+  aiBannerText: { flex: 1, fontSize: 13, color: colors.saferoom[700] },
+  aiBannerBold: { fontWeight: "700" },
   meta: { fontSize: 12, color: colors.slate[500], marginBottom: 12 },
   row: {
     borderBottomWidth: 1,
@@ -215,7 +224,7 @@ const styles = StyleSheet.create({
     marginTop: 12,
   },
   cardHighlight: {
-    borderColor: colors.saferoom[400],
+    borderColor: colors.saferoom[500],
     backgroundColor: colors.saferoom[50],
   },
   cardAddress: { fontSize: 14, fontWeight: "600", color: colors.slate[900] },
@@ -228,4 +237,10 @@ const styles = StyleSheet.create({
     marginTop: 8,
   },
   badgeText: { fontSize: 12, fontWeight: "700" },
+  highlight: {
+    marginTop: 8,
+    fontSize: 12,
+    fontWeight: "500",
+    color: colors.saferoom[700],
+  },
 });

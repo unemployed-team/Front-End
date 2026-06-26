@@ -4,14 +4,19 @@ import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import { MobileLayout } from "@/components/layout/MobileLayout";
 import { Header } from "@/components/layout/Header";
+import { AIAnalysisHeader } from "@/components/report/AIAnalysisHeader";
 import { HRIScoreCard } from "@/components/report/HRIScoreCard";
 import { CategoryBreakdown } from "@/components/report/CategoryBreakdown";
 import { RiskPredictionChart } from "@/components/report/RiskPredictionChart";
+import { RiskExplanationCard } from "@/components/report/RiskExplanationCard";
+import { AuctionSimulationCard } from "@/components/report/AuctionSimulationCard";
+import { DataSourcesFooter } from "@/components/report/DataSourcesFooter";
 import { ShareButton } from "@/components/report/ShareButton";
-import { getBuilding, getBuildingReport } from "@/lib/api/buildings";
+import { getBuilding, getBuildingAnalysis } from "@/lib/api/buildings";
 import { useAppStore } from "@/store/app-store";
 import { useAuthStore } from "@/store/auth-store";
-import type { Building, HRIReport } from "@/types";
+import type { Building } from "@/types";
+import type { BuildingAnalysisResult } from "@/ai/types/analysis";
 import { Bookmark, GitCompare, Shield } from "lucide-react";
 import Link from "next/link";
 import { cn } from "@/lib/utils";
@@ -23,20 +28,21 @@ export default function BuildingReportPage() {
   const { bookmarks, addBookmark, removeBookmark, toggleCompare } = useAppStore();
 
   const [building, setBuilding] = useState<Building | null>(null);
-  const [report, setReport] = useState<HRIReport | null>(null);
+  const [analysis, setAnalysis] = useState<BuildingAnalysisResult | null>(null);
   const [loading, setLoading] = useState(true);
 
   const bookmark = bookmarks.find((b) => b.buildingId === buildingId);
+  const report = analysis?.report;
 
   useEffect(() => {
     async function load() {
       setLoading(true);
-      const [b, r] = await Promise.all([
+      const [b, a] = await Promise.all([
         getBuilding(buildingId),
-        getBuildingReport(buildingId),
+        getBuildingAnalysis(buildingId),
       ]);
       setBuilding(b);
-      setReport(r);
+      setAnalysis(a);
       setLoading(false);
     }
     load();
@@ -70,14 +76,15 @@ export default function BuildingReportPage() {
   if (loading) {
     return (
       <MobileLayout hideNav>
-        <div className="flex h-screen items-center justify-center">
-          <p className="text-slate-500">리포트 분석 중...</p>
+        <div className="flex h-screen flex-col items-center justify-center gap-3">
+          <div className="h-8 w-8 animate-spin rounded-full border-2 border-saferoom-600 border-t-transparent" />
+          <p className="text-sm text-slate-500">AI가 공공데이터를 분석 중...</p>
         </div>
       </MobileLayout>
     );
   }
 
-  if (!building || !report) {
+  if (!building || !analysis || !report) {
     return (
       <MobileLayout hideNav>
         <Header title="건물 리포트" showBack />
@@ -117,6 +124,8 @@ export default function BuildingReportPage() {
       />
 
       <div className="space-y-4 p-4 app-scroll">
+        <AIAnalysisHeader />
+
         <div className="rounded-xl border border-slate-200 bg-white p-4">
           <div className="flex items-start gap-2">
             <Shield className="mt-0.5 h-4 w-4 text-saferoom-600" />
@@ -129,6 +138,12 @@ export default function BuildingReportPage() {
                 <span>{building.floors}층</span>
                 <span>·</span>
                 <span>{building.householdCount}세대</span>
+                {building.universityProximity && (
+                  <>
+                    <span>·</span>
+                    <span className="text-saferoom-600">대학가 인근</span>
+                  </>
+                )}
                 {building.isViolation && (
                   <span className="rounded bg-risk-danger/10 px-1.5 py-0.5 font-medium text-risk-danger">
                     위반건축물
@@ -142,6 +157,11 @@ export default function BuildingReportPage() {
         <HRIScoreCard
           score={report.totalScore}
           grade={report.grade}
+          depositReturnRisk={report.depositReturnRiskPercent}
+        />
+
+        <RiskExplanationCard
+          explanations={analysis.riskExplanation}
           depositReturnRisk={report.depositReturnRiskPercent}
         />
 
@@ -173,6 +193,15 @@ export default function BuildingReportPage() {
             </p>
           )}
         </div>
+
+        {analysis.simulation && analysis.userDeposit && (
+          <AuctionSimulationCard
+            simulation={analysis.simulation}
+            deposit={analysis.userDeposit}
+          />
+        )}
+
+        <DataSourcesFooter />
 
         <div className="flex gap-2 pb-4">
           <ShareButton buildingId={buildingId} />

@@ -98,6 +98,14 @@ export interface AddressSuggestion {
   adminDong?: string;
 }
 
+export interface MapCluster {
+  id: string;
+  lat: number;
+  lng: number;
+  count: number;
+  avgScore: number;
+}
+
 export interface TermsAgreement {
   service: boolean;
   privacy: boolean;
