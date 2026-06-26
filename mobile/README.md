@@ -1,4 +1,4 @@
-# SafeRoom AI — Android (Expo)
+# SafeRoom AI — Mobile (Expo)
 
 Figma [Safe-Room](https://www.figma.com/design/5WtEZv9ljlf0FMCYiT6Tcw/Safe-Room) 디자인을 기반으로 한 Expo React Native 앱입니다.
 
@@ -6,10 +6,10 @@ Figma [Safe-Room](https://www.figma.com/design/5WtEZv9ljlf0FMCYiT6Tcw/Safe-Room)
 
 | 영역 | 기술 |
 |------|------|
-| 프레임워크 | Expo SDK 52 + Expo Router |
+| 프레임워크 | Expo SDK 54 + Expo Router |
 | 언어 | TypeScript |
 | 상태 관리 | Zustand + AsyncStorage |
-| 지도 | react-native-maps (Google Maps) |
+| 지도 | react-native-maps (Google Maps) / 웹은 목록 UI |
 | AI 모듈 | 웹앱과 동일한 HRI 연산 로직 |
 
 ## 시작하기
@@ -17,10 +17,15 @@ Figma [Safe-Room](https://www.figma.com/design/5WtEZv9ljlf0FMCYiT6Tcw/Safe-Room)
 ```bash
 cd mobile
 npm install
-npx expo start --android
+
+# 실기기 (Expo Go SDK 54)
+npx expo start
+
+# 웹 미리보기
+npx expo start --web
 ```
 
-Android 에뮬레이터 또는 실기기에서 Expo Go / 개발 빌드로 실행할 수 있습니다.
+Expo Go 또는 웹 브라우저에서 실행할 수 있습니다. Android 에뮬레이터는 Android SDK 설치 후 `npx expo start --android`로 실행합니다.
 
 ## 구현된 화면
 
