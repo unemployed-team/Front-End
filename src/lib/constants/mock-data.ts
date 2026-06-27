@@ -1,4 +1,4 @@
-import type { Building, HRIReport, MapCluster } from "@/types";
+import type { Building, HRIReport } from "@/types";
 
 export const UNIVERSITY_ZONES = {
   keimyung: { name: "계명대", lat: 35.8531, lng: 128.4856, radiusKm: 2 },
@@ -96,13 +96,6 @@ export const MOCK_BUILDINGS: Building[] = [
     adminDong: "성당동",
     universityProximity: null,
   },
-];
-
-export const MOCK_CLUSTERS: MapCluster[] = [
-  { id: "c1", lat: 35.8719, lng: 128.6016, count: 24, avgScore: 42 },
-  { id: "c2", lat: 35.8421, lng: 128.5893, count: 18, avgScore: 58 },
-  { id: "c3", lat: 35.8967, lng: 128.6145, count: 31, avgScore: 71 },
-  { id: "c4", lat: 35.8589, lng: 128.6312, count: 12, avgScore: 38 },
 ];
 
 export function findBuildingById(id: string): Building | undefined {

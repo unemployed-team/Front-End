@@ -1,6 +1,6 @@
 export type RiskGrade = "safe" | "caution" | "danger";
 
-export type SocialProvider = "kakao" | "naver";
+export type SocialProvider = "kakao" | "google";
 
 export interface User {
   id: string;
@@ -47,6 +47,7 @@ export interface HRIReport {
   relativeRiskPercent: number;
   fieldReportPenalty: number;
   updatedAt: string;
+  shareUrl?: string;
 }
 
 export interface FieldReport {
@@ -90,12 +91,16 @@ export interface RecoverySimulation {
 }
 
 export interface AddressSuggestion {
+  id?: string;
+  buildingId?: number;
   roadAddress: string;
   jibunAddress: string;
   lat: number;
   lng: number;
   pnu?: string;
   adminDong?: string;
+  totalScore?: number;
+  riskGrade?: RiskGrade;
 }
 
 export interface MapCluster {

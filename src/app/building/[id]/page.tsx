@@ -13,6 +13,12 @@ import { AuctionSimulationCard } from "@/components/report/AuctionSimulationCard
 import { DataSourcesFooter } from "@/components/report/DataSourcesFooter";
 import { ShareButton } from "@/components/report/ShareButton";
 import { getBuilding, getBuildingAnalysis } from "@/lib/api/buildings";
+import {
+  addBookmark as addBookmarkApi,
+  getMyBookmarks,
+  removeBookmark as removeBookmarkApi,
+} from "@/lib/api/bookmarks";
+import { ApiError } from "@/lib/api/client";
 import { useAppStore } from "@/store/app-store";
 import { useAuthStore } from "@/store/auth-store";
 import type { Building } from "@/types";
@@ -25,46 +31,74 @@ export default function BuildingReportPage() {
   const params = useParams();
   const buildingId = params.id as string;
   const { isAuthenticated } = useAuthStore();
-  const { bookmarks, addBookmark, removeBookmark, toggleCompare } = useAppStore();
+  const { toggleCompare } = useAppStore();
 
   const [building, setBuilding] = useState<Building | null>(null);
   const [analysis, setAnalysis] = useState<BuildingAnalysisResult | null>(null);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [isBookmarked, setIsBookmarked] = useState(false);
+  const [bookmarkLoading, setBookmarkLoading] = useState(false);
 
-  const bookmark = bookmarks.find((b) => b.buildingId === buildingId);
   const report = analysis?.report;
 
   useEffect(() => {
     async function load() {
       setLoading(true);
-      const [b, a] = await Promise.all([
-        getBuilding(buildingId),
-        getBuildingAnalysis(buildingId),
-      ]);
-      setBuilding(b);
-      setAnalysis(a);
-      setLoading(false);
+      setLoadError(null);
+      try {
+        const [b, a] = await Promise.all([
+          getBuilding(buildingId),
+          getBuildingAnalysis(buildingId),
+        ]);
+        setBuilding(b);
+        setAnalysis(a);
+      } catch (e) {
+        setBuilding(null);
+        setAnalysis(null);
+        setLoadError(
+          e instanceof ApiError ? e.message : "리포트를 불러오지 못했습니다."
+        );
+      } finally {
+        setLoading(false);
+      }
     }
     load();
   }, [buildingId]);
 
-  const handleBookmark = () => {
+  useEffect(() => {
+    if (!isAuthenticated || !/^\d+$/.test(buildingId)) {
+      setIsBookmarked(false);
+      return;
+    }
+    getMyBookmarks()
+      .then((list) =>
+        setIsBookmarked(list.some((b) => String(b.buildingId) === buildingId))
+      )
+      .catch(() => setIsBookmarked(false));
+  }, [isAuthenticated, buildingId]);
+
+  const handleBookmark = async () => {
     if (!isAuthenticated) {
       window.location.href = "/login";
       return;
     }
-    if (!building || !report) return;
+    if (!building || !report || !/^\d+$/.test(buildingId)) return;
 
-    if (bookmark) {
-      removeBookmark(bookmark.id);
-    } else {
-      addBookmark({
-        id: `bm-${Date.now()}`,
-        buildingId,
-        building,
-        report,
-        addedAt: new Date().toISOString(),
-      });
+    const id = Number(buildingId);
+    setBookmarkLoading(true);
+    try {
+      if (isBookmarked) {
+        await removeBookmarkApi(id);
+        setIsBookmarked(false);
+      } else {
+        await addBookmarkApi(id);
+        setIsBookmarked(true);
+      }
+    } catch (e) {
+      alert(e instanceof ApiError ? e.message : "북마크 처리에 실패했습니다.");
+    } finally {
+      setBookmarkLoading(false);
     }
   };
 
@@ -88,7 +122,21 @@ export default function BuildingReportPage() {
     return (
       <MobileLayout hideNav>
         <Header title="건물 리포트" showBack />
-        <div className="p-8 text-center text-slate-500">건물 정보를 찾을 수 없습니다.</div>
+        <div className="space-y-2 p-8 text-center text-slate-500">
+          <p>{loadError ?? "건물 정보를 찾을 수 없습니다."}</p>
+          {buildingId.startsWith("bld-") && (
+            <p className="text-xs text-slate-400">
+              데모용 건물 링크입니다. .env.local에서 NEXT_PUBLIC_USE_MOCK=true 로
+              설정하거나 주소 검색을 이용하세요.
+            </p>
+          )}
+          <Link
+            href="/search"
+            className="mt-4 inline-block text-sm font-medium text-saferoom-600 underline"
+          >
+            주소 검색으로 이동
+          </Link>
+        </div>
       </MobileLayout>
     );
   }
@@ -103,13 +151,14 @@ export default function BuildingReportPage() {
             <button
               type="button"
               onClick={handleBookmark}
+              disabled={bookmarkLoading}
               className={cn(
                 "rounded-lg p-2",
-                bookmark ? "text-saferoom-600" : "text-slate-400"
+                isBookmarked ? "text-saferoom-600" : "text-slate-400"
               )}
               aria-label="북마크"
             >
-              <Bookmark className="h-5 w-5" fill={bookmark ? "currentColor" : "none"} />
+              <Bookmark className="h-5 w-5" fill={isBookmarked ? "currentColor" : "none"} />
             </button>
             <button
               type="button"
@@ -134,10 +183,18 @@ export default function BuildingReportPage() {
               <p className="text-xs text-slate-500">{building.jibunAddress}</p>
               <div className="mt-2 flex flex-wrap gap-2 text-xs text-slate-600">
                 <span>{building.buildYear}년 건축</span>
-                <span>·</span>
-                <span>{building.floors}층</span>
-                <span>·</span>
-                <span>{building.householdCount}세대</span>
+                {building.floors > 0 && (
+                  <>
+                    <span>·</span>
+                    <span>{building.floors}층</span>
+                  </>
+                )}
+                {building.householdCount > 0 && (
+                  <>
+                    <span>·</span>
+                    <span>{building.householdCount}세대</span>
+                  </>
+                )}
                 {building.universityProximity && (
                   <>
                     <span>·</span>
@@ -204,7 +261,7 @@ export default function BuildingReportPage() {
         <DataSourcesFooter />
 
         <div className="flex gap-2 pb-4">
-          <ShareButton buildingId={buildingId} />
+          <ShareButton buildingId={buildingId} shareUrl={report.shareUrl} />
           <Link
             href={`/report/qr/${buildingId}`}
             className="flex flex-1 items-center justify-center rounded-xl border border-slate-200 bg-white py-2.5 text-sm font-medium text-slate-700"

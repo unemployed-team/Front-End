@@ -2,18 +2,18 @@
 
 import { useState } from "react";
 import { Share2, Check } from "lucide-react";
-import { generateShareToken } from "@/lib/utils";
+import { resolveShareUrlForCopy } from "@/lib/share-url";
 
 interface ShareButtonProps {
   buildingId: string;
+  shareUrl?: string;
 }
 
-export function ShareButton({ buildingId }: ShareButtonProps) {
+export function ShareButton({ buildingId, shareUrl }: ShareButtonProps) {
   const [copied, setCopied] = useState(false);
 
   const handleShare = async () => {
-    const token = generateShareToken(buildingId);
-    const url = `${window.location.origin}/report/share/${token}?building=${buildingId}`;
+    const url = resolveShareUrlForCopy(buildingId, shareUrl);
 
     try {
       await navigator.clipboard.writeText(url);

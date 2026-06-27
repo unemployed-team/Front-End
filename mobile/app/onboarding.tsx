@@ -1,9 +1,19 @@
 import { useState } from "react";
-import { View, Text, Pressable, StyleSheet, ScrollView } from "react-native";
+import {
+  View,
+  Text,
+  Pressable,
+  StyleSheet,
+  ScrollView,
+  Alert,
+  ActivityIndicator,
+} from "react-native";
 import { useRouter } from "expo-router";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { useAuthStore } from "@/store/auth-store";
+import { updateMe } from "@/lib/api/users";
+import { ApiError } from "@/lib/api/client";
 import { colors } from "@/theme/colors";
 
 const CITIES = ["대구광역시", "서울특별시", "부산광역시"];
@@ -15,14 +25,28 @@ const DISTRICTS: Record<string, string[]> = {
 
 export default function OnboardingScreen() {
   const router = useRouter();
-  const { completeOnboarding } = useAuthStore();
+  const { completeOnboarding, setUser } = useAuthStore();
   const [city, setCity] = useState("대구광역시");
   const [district, setDistrict] = useState("");
+  const [loading, setLoading] = useState(false);
 
-  const handleComplete = () => {
+  const handleComplete = async () => {
     if (!district) return;
-    completeOnboarding({ city, district });
-    router.replace("/(tabs)");
+    setLoading(true);
+    try {
+      const interestRegion = `${city} ${district}`;
+      const updatedUser = await updateMe({ interestRegion });
+      setUser(updatedUser);
+      completeOnboarding({ city, district });
+      router.replace("/(tabs)");
+    } catch (e) {
+      Alert.alert(
+        "저장 실패",
+        e instanceof ApiError ? e.message : "관심 지역 저장에 실패했습니다."
+      );
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -77,10 +101,13 @@ export default function OnboardingScreen() {
         </View>
 
         <Pressable
-          style={[styles.completeBtn, !district && styles.completeBtnDisabled]}
-          disabled={!district}
+          style={[styles.completeBtn, (!district || loading) && styles.completeBtnDisabled]}
+          disabled={!district || loading}
           onPress={handleComplete}
         >
+          {loading ? (
+            <ActivityIndicator color={colors.white} />
+          ) : (
           <Text
             style={[
               styles.completeText,
@@ -89,6 +116,7 @@ export default function OnboardingScreen() {
           >
             가입 완료
           </Text>
+          )}
         </Pressable>
       </ScrollView>
     </SafeAreaView>

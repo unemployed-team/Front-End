@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { MobileLayout } from "@/components/layout/MobileLayout";
 import { useAuthStore } from "@/store/auth-store";
+import { updateMe } from "@/lib/api/users";
 import { Shield } from "lucide-react";
 
 const CITIES = ["대구광역시", "서울특별시", "부산광역시"];
@@ -15,14 +16,29 @@ const DISTRICTS: Record<string, string[]> = {
 
 export default function OnboardingPage() {
   const router = useRouter();
-  const { completeOnboarding } = useAuthStore();
+  const { completeOnboarding, setUser } = useAuthStore();
   const [city, setCity] = useState("대구광역시");
   const [district, setDistrict] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
-  const handleComplete = () => {
+  const handleComplete = async () => {
     if (!district) return;
-    completeOnboarding({ city, district });
-    router.push("/");
+    const interestRegion = `${city} ${district}`;
+    setLoading(true);
+    setError(null);
+    try {
+      const user = await updateMe({ interestRegion });
+      setUser(user);
+      completeOnboarding(interestRegion);
+      router.push("/");
+    } catch (e) {
+      setError(
+        e instanceof Error ? e.message : "관심 지역 저장에 실패했습니다."
+      );
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -79,13 +95,17 @@ export default function OnboardingPage() {
             </div>
           </div>
 
+          {error && (
+            <p className="mt-4 text-center text-sm text-risk-danger">{error}</p>
+          )}
+
           <button
             type="button"
-            disabled={!district}
+            disabled={!district || loading}
             onClick={handleComplete}
             className="mt-10 w-full rounded-xl bg-saferoom-600 py-3.5 text-sm font-bold text-white disabled:bg-slate-200 disabled:text-slate-400"
           >
-            가입 완료
+            {loading ? "저장 중..." : "가입 완료"}
           </button>
         </div>
       </div>

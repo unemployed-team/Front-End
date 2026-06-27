@@ -10,11 +10,20 @@
     "splash": {
       "backgroundColor": "#0d9488"
     },
+    "ios": {
+      "bundleIdentifier": "com.saferoom.ai",
+      "infoPlist": {
+        "NSAppTransportSecurity": {
+          "NSAllowsArbitraryLoads": true
+        }
+      }
+    },
     "android": {
       "package": "com.saferoom.ai",
       "adaptiveIcon": {
         "backgroundColor": "#0d9488"
       },
+      "usesCleartextTraffic": true,
       "permissions": [
         "ACCESS_COARSE_LOCATION",
         "ACCESS_FINE_LOCATION"
@@ -23,7 +32,9 @@
     "plugins": [
       "expo-router",
       "expo-asset",
-      "expo-font"
+      "expo-font",
+      "expo-web-browser",
+      "@react-native-community/datetimepicker"
     ],
     "experiments": {
       "typedRoutes": true

@@ -21,6 +21,12 @@ import { RiskExplanationCard } from "@/components/report/RiskExplanationCard";
 import { AuctionSimulationCard } from "@/components/report/AuctionSimulationCard";
 import { DataSourcesFooter } from "@/components/report/DataSourcesFooter";
 import { getBuilding, getBuildingAnalysis } from "@/lib/api/buildings";
+import {
+  addBookmark as addBookmarkApi,
+  getMyBookmarks,
+  removeBookmark as removeBookmarkApi,
+} from "@/lib/api/bookmarks";
+import { ApiError } from "@/lib/api/client";
 import { useAppStore } from "@/store/app-store";
 import { useAuthStore } from "@/store/auth-store";
 import { generateShareToken } from "@/lib/utils";
@@ -32,13 +38,14 @@ export default function BuildingReportScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
   const { isAuthenticated } = useAuthStore();
-  const { bookmarks, addBookmark, removeBookmark, toggleCompare } = useAppStore();
+  const { toggleCompare } = useAppStore();
 
   const [building, setBuilding] = useState<Building | null>(null);
   const [analysis, setAnalysis] = useState<BuildingAnalysisResult | null>(null);
   const [loading, setLoading] = useState(true);
+  const [isBookmarked, setIsBookmarked] = useState(false);
+  const [bookmarkLoading, setBookmarkLoading] = useState(false);
 
-  const bookmark = bookmarks.find((b) => b.buildingId === id);
   const report = analysis?.report;
 
   useEffect(() => {
@@ -56,22 +63,40 @@ export default function BuildingReportScreen() {
     load();
   }, [id]);
 
-  const handleBookmark = () => {
+  useEffect(() => {
+    if (!isAuthenticated || !id || !/^\d+$/.test(id)) {
+      setIsBookmarked(false);
+      return;
+    }
+    getMyBookmarks()
+      .then((list) =>
+        setIsBookmarked(list.some((b) => String(b.buildingId) === id))
+      )
+      .catch(() => setIsBookmarked(false));
+  }, [isAuthenticated, id]);
+
+  const handleBookmark = async () => {
     if (!isAuthenticated) {
       router.push("/login");
       return;
     }
-    if (!building || !report) return;
-    if (bookmark) {
-      removeBookmark(bookmark.id);
-    } else {
-      addBookmark({
-        id: `bm-${Date.now()}`,
-        buildingId: id!,
-        building,
-        report,
-        addedAt: new Date().toISOString(),
-      });
+    if (!building || !/^\d+$/.test(id!)) return;
+    setBookmarkLoading(true);
+    try {
+      if (isBookmarked) {
+        await removeBookmarkApi(Number(id));
+        setIsBookmarked(false);
+      } else {
+        await addBookmarkApi(Number(id));
+        setIsBookmarked(true);
+      }
+    } catch (e) {
+      Alert.alert(
+        "북마크",
+        e instanceof ApiError ? e.message : "북마크 처리에 실패했습니다."
+      );
+    } finally {
+      setBookmarkLoading(false);
     }
   };
 
@@ -111,9 +136,9 @@ export default function BuildingReportScreen() {
           <View style={styles.headerActions}>
             <Pressable onPress={handleBookmark} hitSlop={8}>
               <Ionicons
-                name={bookmark ? "bookmark" : "bookmark-outline"}
+                name={isBookmarked ? "bookmark" : "bookmark-outline"}
                 size={22}
-                color={bookmark ? colors.saferoom[600] : colors.slate[400]}
+                color={isBookmarked ? colors.saferoom[600] : colors.slate[400]}
               />
             </Pressable>
             <Pressable

@@ -44,3 +44,8 @@ mobile/node_modules/
 mobile/.expo/
 mobile/dist/
 mobile/web-build/
+mobile/.env
+mobile/.env*.local
+
+# auto-generated expo router types (under .expo, keep explicit)
+mobile/.expo/types/

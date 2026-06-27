@@ -1,9 +1,20 @@
-import { View, Text, Pressable, FlatList, StyleSheet } from "react-native";
+import { useCallback, useEffect, useState } from "react";
+import {
+  View,
+  Text,
+  Pressable,
+  FlatList,
+  StyleSheet,
+  ActivityIndicator,
+  Alert,
+} from "react-native";
 import { useRouter } from "expo-router";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { Header } from "@/components/layout/Header";
-import { useAppStore } from "@/store/app-store";
+import { getMyBookmarks, removeBookmark } from "@/lib/api/bookmarks";
+import { toRiskGrade } from "@/lib/api/mappers";
+import type { BookmarkResponse } from "@/lib/api/types";
 import {
   getRiskGradeBg,
   getRiskGradeColor,
@@ -13,27 +24,57 @@ import { colors } from "@/theme/colors";
 
 export default function BookmarksScreen() {
   const router = useRouter();
-  const { bookmarks, removeBookmark } = useAppStore();
+  const [bookmarks, setBookmarks] = useState<BookmarkResponse[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  const loadBookmarks = useCallback(async () => {
+    setLoading(true);
+    try {
+      const list = await getMyBookmarks();
+      setBookmarks(list);
+    } catch {
+      setBookmarks([]);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    loadBookmarks();
+  }, [loadBookmarks]);
+
+  const handleRemove = async (buildingId: number) => {
+    try {
+      await removeBookmark(buildingId);
+      setBookmarks((prev) => prev.filter((b) => b.buildingId !== buildingId));
+    } catch {
+      Alert.alert("삭제 실패", "북마크 삭제에 실패했습니다.");
+    }
+  };
 
   return (
     <SafeAreaView style={styles.safe} edges={["top"]}>
       <Header title="관심 건물" showBack />
-      {bookmarks.length === 0 ? (
+      {loading ? (
+        <ActivityIndicator color={colors.saferoom[600]} style={{ marginTop: 48 }} />
+      ) : bookmarks.length === 0 ? (
         <Text style={styles.empty}>저장된 관심 건물이 없습니다</Text>
       ) : (
         <FlatList
           data={bookmarks}
-          keyExtractor={(item) => item.id}
+          keyExtractor={(item) => String(item.bookmarkId)}
           contentContainerStyle={styles.list}
           renderItem={({ item }) => {
-            const gradeStyle = getRiskGradeBg(item.report.grade);
+            const grade = toRiskGrade(item.riskGrade);
+            const gradeStyle = getRiskGradeBg(grade);
             return (
               <View style={styles.item}>
                 <Pressable
                   style={styles.itemContent}
                   onPress={() => router.push(`/building/${item.buildingId}`)}
                 >
-                  <Text style={styles.address}>{item.building.roadAddress}</Text>
+                  <Text style={styles.address}>{item.roadAddress}</Text>
+                  <Text style={styles.buildingName}>{item.buildingName}</Text>
                   <View
                     style={[
                       styles.badge,
@@ -46,18 +87,14 @@ export default function BookmarksScreen() {
                     <Text
                       style={[
                         styles.badgeText,
-                        { color: getRiskGradeColor(item.report.grade) },
+                        { color: getRiskGradeColor(grade) },
                       ]}
                     >
-                      HRI {item.report.totalScore} ·{" "}
-                      {getRiskGradeLabel(item.report.grade)}
+                      HRI {item.hriScore} · {getRiskGradeLabel(grade)}
                     </Text>
                   </View>
                 </Pressable>
-                <Pressable
-                  onPress={() => removeBookmark(item.id)}
-                  hitSlop={8}
-                >
+                <Pressable onPress={() => handleRemove(item.buildingId)} hitSlop={8}>
                   <Ionicons name="trash-outline" size={18} color={colors.slate[400]} />
                 </Pressable>
               </View>
@@ -90,6 +127,7 @@ const styles = StyleSheet.create({
   },
   itemContent: { flex: 1 },
   address: { fontSize: 14, fontWeight: "600", color: colors.slate[900] },
+  buildingName: { fontSize: 12, color: colors.slate[500], marginTop: 2 },
   badge: {
     alignSelf: "flex-start",
     borderWidth: 1,

@@ -3,6 +3,7 @@ import { useRouter } from "expo-router";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { SocialLoginButtons } from "@/components/auth/SocialLoginButtons";
+import { DevLoginButton } from "@/components/auth/DevLoginButton";
 import { colors } from "@/theme/colors";
 
 export default function LoginScreen() {
@@ -20,6 +21,7 @@ export default function LoginScreen() {
         </Text>
         <View style={styles.buttons}>
           <SocialLoginButtons />
+          <DevLoginButton />
         </View>
         <Pressable onPress={() => router.replace("/(tabs)")}>
           <Text style={styles.skip}>로그인 없이 둘러보기</Text>

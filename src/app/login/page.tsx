@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { MobileLayout } from "@/components/layout/MobileLayout";
 import { SocialLoginButtons } from "@/components/auth/SocialLoginButtons";
+import { DevLoginButton } from "@/components/auth/DevLoginButton";
 import { Shield } from "lucide-react";
 
 export default function LoginPage() {
@@ -20,6 +21,7 @@ export default function LoginPage() {
 
           <div className="mt-10">
             <SocialLoginButtons />
+            <DevLoginButton />
           </div>
 
           <Link

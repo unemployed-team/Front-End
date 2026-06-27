@@ -1,25 +1,87 @@
-import { useMemo } from "react";
-import { View, Text, Pressable, ScrollView, StyleSheet } from "react-native";
+import { useEffect, useMemo, useState } from "react";
+import { View, Text, Pressable, ScrollView, StyleSheet, ActivityIndicator } from "react-native";
 import { useRouter } from "expo-router";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { Header } from "@/components/layout/Header";
 import { useAppStore } from "@/store/app-store";
+import { useAuthStore } from "@/store/auth-store";
 import { SafeRoomEngine } from "@/ai";
+import { compareBookmarks } from "@/lib/api/bookmarks";
+import { toRiskGrade } from "@/lib/api/mappers";
+import type { BuildingCompareItem, CompareResponse } from "@/lib/api/types";
+import { USE_MOCK } from "@/lib/config";
 import {
+  formatCurrency,
   getRiskGradeBg,
   getRiskGradeColor,
   getRiskGradeLabel,
 } from "@/lib/utils";
 import { colors } from "@/theme/colors";
 
+const API_COMPARE_ROWS: {
+  metric: string;
+  lowerIsBetter?: boolean;
+  getValue: (item: BuildingCompareItem) => string | number;
+}[] = [
+  { metric: "HRI 점수", lowerIsBetter: true, getValue: (b) => b.hriScore },
+  {
+    metric: "등급",
+    getValue: (b) => getRiskGradeLabel(toRiskGrade(b.riskGrade)),
+  },
+  { metric: "건물 위험", lowerIsBetter: true, getValue: (b) => b.buildingRiskScore },
+  { metric: "시장 위험", lowerIsBetter: true, getValue: (b) => b.marketRiskScore },
+  {
+    metric: "임대인 위험",
+    lowerIsBetter: true,
+    getValue: (b) => b.landlordRiskScore,
+  },
+  { metric: "생활 위험", lowerIsBetter: true, getValue: (b) => b.livingRiskScore },
+  {
+    metric: "평균 보증금",
+    lowerIsBetter: true,
+    getValue: (b) => formatCurrency(b.avgDepositPrice),
+  },
+];
+
 export default function CompareScreen() {
   const router = useRouter();
   const { compareSelection, toggleCompare, clearCompare } = useAppStore();
+  const isDevSession = useAuthStore((s) => s.isDevSession);
 
-  const compareResult = useMemo(
+  const buildingIds = useMemo(
+    () =>
+      compareSelection
+        .map((c) => Number(c.building.id))
+        .filter((id) => id > 0 && !Number.isNaN(id)),
+    [compareSelection]
+  );
+
+  const [apiCompare, setApiCompare] = useState<CompareResponse | null>(null);
+  const [compareLoading, setCompareLoading] = useState(false);
+
+  const mockResult = useMemo(
     () => SafeRoomEngine.compare(compareSelection),
     [compareSelection]
+  );
+
+  const useApiCompare =
+    !USE_MOCK && !isDevSession && buildingIds.length >= 2;
+
+  useEffect(() => {
+    if (!useApiCompare) {
+      setApiCompare(null);
+      return;
+    }
+    setCompareLoading(true);
+    compareBookmarks(buildingIds)
+      .then(setApiCompare)
+      .catch(() => setApiCompare(null))
+      .finally(() => setCompareLoading(false));
+  }, [buildingIds, useApiCompare]);
+
+  const apiSafest = apiCompare?.buildings.find(
+    (b) => b.buildingId === apiCompare.safestBuildingId
   );
 
   return (
@@ -49,15 +111,110 @@ export default function CompareScreen() {
               <Text style={styles.searchLinkText}>건물 검색하기</Text>
             </Pressable>
           </View>
+        ) : useApiCompare && apiCompare ? (
+          <>
+            {apiSafest && (
+              <View style={styles.aiBanner}>
+                <Ionicons name="sparkles" size={16} color={colors.saferoom[700]} />
+                <Text style={styles.aiBannerText}>
+                  AI 추천:{" "}
+                  <Text style={styles.aiBannerBold}>{apiSafest.buildingName}</Text>
+                  이 종합 안전 지표가 가장 우수합니다
+                </Text>
+              </View>
+            )}
+
+            <Text style={styles.meta}>
+              {compareSelection.length}/3 선택 · 백엔드 HRI 비교
+            </Text>
+
+            {compareLoading && (
+              <ActivityIndicator color={colors.saferoom[600]} style={{ marginBottom: 8 }} />
+            )}
+
+            {API_COMPARE_ROWS.map((row) => (
+              <View key={row.metric} style={styles.row}>
+                <Text style={styles.rowLabel}>{row.metric}</Text>
+                <View style={styles.rowValues}>
+                  {apiCompare.buildings.map((item) => {
+                    const value = row.getValue(item);
+                    return (
+                      <View key={item.buildingId} style={styles.cell}>
+                        {item.isHighlighted && (
+                          <Ionicons
+                            name="trophy"
+                            size={12}
+                            color={colors.risk.caution}
+                          />
+                        )}
+                        <Text
+                          style={[
+                            styles.cellText,
+                            row.metric === "등급" && {
+                              color: getRiskGradeColor(toRiskGrade(item.riskGrade)),
+                            },
+                          ]}
+                        >
+                          {value}
+                        </Text>
+                        <Pressable
+                          onPress={() => {
+                            const full = compareSelection.find(
+                              (c) => c.building.id === String(item.buildingId)
+                            );
+                            if (full) toggleCompare(full);
+                          }}
+                        >
+                          <Ionicons name="close" size={14} color={colors.slate[400]} />
+                        </Pressable>
+                      </View>
+                    );
+                  })}
+                </View>
+              </View>
+            ))}
+
+            {apiCompare.buildings.map((item) => {
+              const grade = toRiskGrade(item.riskGrade);
+              const gradeStyle = getRiskGradeBg(grade);
+              return (
+                <Pressable
+                  key={item.buildingId}
+                  style={[styles.card, item.isHighlighted && styles.cardHighlight]}
+                  onPress={() => router.push(`/building/${item.buildingId}`)}
+                >
+                  <Text style={styles.cardAddress}>{item.roadAddress}</Text>
+                  <View
+                    style={[
+                      styles.badge,
+                      {
+                        backgroundColor: gradeStyle.bg,
+                        borderColor: gradeStyle.border,
+                      },
+                    ]}
+                  >
+                    <Text
+                      style={[
+                        styles.badgeText,
+                        { color: getRiskGradeColor(grade) },
+                      ]}
+                    >
+                      HRI {item.hriScore} · {getRiskGradeLabel(grade)}
+                    </Text>
+                  </View>
+                </Pressable>
+              );
+            })}
+          </>
         ) : (
           <>
-            {compareResult.safestBuildingId && (
+            {mockResult.safestBuildingId && (
               <View style={styles.aiBanner}>
                 <Ionicons name="sparkles" size={16} color={colors.saferoom[700]} />
                 <Text style={styles.aiBannerText}>
                   AI 추천:{" "}
                   <Text style={styles.aiBannerBold}>
-                    {compareResult.items.find((i) => i.isSafest)?.adminDong}
+                    {mockResult.items.find((i) => i.isSafest)?.adminDong}
                   </Text>
                   이 종합 안전 지표가 가장 우수합니다
                 </Text>
@@ -68,21 +225,12 @@ export default function CompareScreen() {
               {compareSelection.length}/3 선택 · HRI Score 기준 비교
             </Text>
 
-            {compareResult.comparisonMatrix.map((row) => (
+            {mockResult.comparisonMatrix.map((row) => (
               <View key={row.metric} style={styles.row}>
                 <Text style={styles.rowLabel}>{row.metric}</Text>
                 <View style={styles.rowValues}>
-                  {compareResult.items.map((item) => {
+                  {mockResult.items.map((item) => {
                     const value = row.values[item.buildingId];
-                    const numericValues = compareResult.items
-                      .map((i) => row.values[i.buildingId])
-                      .filter((v): v is number => typeof v === "number");
-                    const isBest =
-                      row.lowerIsBetter &&
-                      typeof value === "number" &&
-                      numericValues.length > 0 &&
-                      value === Math.min(...numericValues);
-
                     return (
                       <View key={item.buildingId} style={styles.cell}>
                         {item.isSafest && (
@@ -95,7 +243,6 @@ export default function CompareScreen() {
                         <Text
                           style={[
                             styles.cellText,
-                            isBest && { color: colors.saferoom[600] },
                             row.metric === "등급" && {
                               color: getRiskGradeColor(item.report.grade),
                             },
@@ -120,7 +267,7 @@ export default function CompareScreen() {
               </View>
             ))}
 
-            {compareResult.items.map((item) => {
+            {mockResult.items.map((item) => {
               const gradeStyle = getRiskGradeBg(item.report.grade);
               return (
                 <Pressable

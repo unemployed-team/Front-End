@@ -1,41 +1,46 @@
 "use client";
 
 import { useState } from "react";
-import { useRouter } from "next/navigation";
 import { TermsModal } from "./TermsModal";
 import { useAuthStore } from "@/store/auth-store";
-import type { SocialProvider, User } from "@/types";
+import { startOAuthRedirect } from "@/lib/oauth";
+import type { SocialProvider } from "@/types";
 
 const PROVIDERS: { id: SocialProvider; label: string; color: string; emoji: string }[] = [
   { id: "kakao", label: "카카오로 시작", color: "bg-[#FEE500] text-[#191919]", emoji: "💬" },
-  { id: "naver", label: "네이버로 시작", color: "bg-[#03C75A] text-white", emoji: "N" },
+  { id: "google", label: "구글로 시작", color: "bg-white text-slate-700 border border-slate-200", emoji: "G" },
 ];
 
 export function SocialLoginButtons() {
-  const router = useRouter();
-  const { login, setPendingTerms } = useAuthStore();
+  const { setPendingTerms } = useAuthStore();
   const [showTerms, setShowTerms] = useState(false);
   const [pendingProvider, setPendingProvider] = useState<SocialProvider | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
   const handleSocialLogin = (provider: SocialProvider) => {
     setPendingProvider(provider);
     setShowTerms(true);
+    setError(null);
   };
 
-  const handleTermsAgree = (terms: { service: boolean; privacy: boolean; location: boolean }) => {
+  const handleTermsAgree = (terms: {
+    service: boolean;
+    privacy: boolean;
+    location: boolean;
+  }) => {
+    if (!pendingProvider) return;
     setShowTerms(false);
     setPendingTerms(terms);
 
-    const mockUser: User = {
-      id: `user-${Date.now()}`,
-      email: pendingProvider === "kakao" ? "user@kakao.com" : "user@naver.com",
-      nickname: pendingProvider === "kakao" ? "카카오유저" : "네이버유저",
-      provider: pendingProvider ?? "kakao",
-      createdAt: new Date().toISOString(),
-    };
-
-    login(mockUser);
-    router.push("/onboarding");
+    try {
+      startOAuthRedirect(pendingProvider);
+    } catch (e) {
+      setError(
+        e instanceof Error
+          ? e.message
+          : "OAuth 설정이 필요합니다. .env.local을 확인하세요."
+      );
+    }
   };
 
   return (
@@ -53,6 +58,9 @@ export function SocialLoginButtons() {
           </button>
         ))}
       </div>
+      {error && (
+        <p className="mt-3 text-center text-xs text-risk-danger">{error}</p>
+      )}
       <TermsModal open={showTerms} onAgree={handleTermsAgree} />
     </>
   );

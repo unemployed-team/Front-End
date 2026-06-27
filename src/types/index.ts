@@ -1,12 +1,12 @@
 export type RiskGrade = "safe" | "caution" | "danger";
 
-export type SocialProvider = "kakao" | "naver";
+export type SocialProvider = "kakao" | "google";
 
 export interface User {
   id: string;
   email: string;
   nickname: string;
-  interestRegion?: { city: string; district: string };
+  interestRegion?: string;
   provider: SocialProvider;
   createdAt: string;
 }
@@ -47,6 +47,7 @@ export interface HRIReport {
   relativeRiskPercent: number;
   fieldReportPenalty: number;
   updatedAt: string;
+  shareUrl?: string;
 }
 
 export interface FieldReport {
@@ -90,12 +91,17 @@ export interface RecoverySimulation {
 }
 
 export interface AddressSuggestion {
+  /** mock 등 문자열 건물 ID */
+  id?: string;
+  buildingId?: number;
   roadAddress: string;
   jibunAddress: string;
   lat: number;
   lng: number;
   pnu?: string;
   adminDong?: string;
+  totalScore?: number;
+  riskGrade?: RiskGrade;
 }
 
 export interface MapCluster {

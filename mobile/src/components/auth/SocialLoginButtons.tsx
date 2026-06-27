@@ -6,11 +6,17 @@ import {
   Modal,
   StyleSheet,
   ScrollView,
+  Alert,
+  ActivityIndicator,
 } from "react-native";
 import { useRouter } from "expo-router";
-import type { SocialProvider, TermsAgreement, User } from "@/types";
+import type { SocialProvider, TermsAgreement } from "@/types";
 import { useAuthStore } from "@/store/auth-store";
+import { exchangeGoogleCode, exchangeKakaoCode } from "@/lib/api/auth";
+import { fetchMe } from "@/lib/api/users";
+import { startSocialOAuth, getOAuthRedirectUri } from "@/lib/oauth";
 import { colors } from "@/theme/colors";
+import { ApiError } from "@/lib/api/client";
 
 const PROVIDERS: {
   id: SocialProvider;
@@ -18,38 +24,80 @@ const PROVIDERS: {
   bg: string;
   text: string;
   emoji: string;
+  border?: string;
 }[] = [
   { id: "kakao", label: "카카오로 시작", bg: colors.kakao, text: "#191919", emoji: "💬" },
-  { id: "naver", label: "네이버로 시작", bg: colors.naver, text: colors.white, emoji: "N" },
+  {
+    id: "google",
+    label: "구글로 시작",
+    bg: colors.white,
+    text: colors.slate[700],
+    emoji: "G",
+    border: colors.slate[200],
+  },
 ];
 
 export function SocialLoginButtons() {
   const router = useRouter();
-  const { login, setPendingTerms } = useAuthStore();
+  const { login, setPendingTerms, setTokens } = useAuthStore();
   const [showTerms, setShowTerms] = useState(false);
   const [pendingProvider, setPendingProvider] = useState<SocialProvider | null>(null);
+  const [loading, setLoading] = useState(false);
 
-  const handleTermsAgree = (terms: TermsAgreement) => {
+  const handleTermsAgree = async (terms: TermsAgreement) => {
+    if (!pendingProvider) return;
     setShowTerms(false);
     setPendingTerms(terms);
-    const mockUser: User = {
-      id: `user-${Date.now()}`,
-      email: pendingProvider === "kakao" ? "user@kakao.com" : "user@naver.com",
-      nickname: pendingProvider === "kakao" ? "카카오유저" : "네이버유저",
-      provider: pendingProvider ?? "kakao",
-      createdAt: new Date().toISOString(),
-    };
-    login(mockUser);
-    router.push("/onboarding");
+    setLoading(true);
+
+    try {
+      const code = await startSocialOAuth(pendingProvider);
+      const tokens =
+        pendingProvider === "kakao"
+          ? await exchangeKakaoCode(code)
+          : await exchangeGoogleCode(code);
+
+      setTokens(tokens.accessToken, tokens.refreshToken);
+      const user = await fetchMe();
+      login(user, {
+        access: tokens.accessToken,
+        refresh: tokens.refreshToken,
+      });
+
+      if (!user.interestRegion?.district) {
+        router.replace("/onboarding");
+      } else {
+        router.replace("/(tabs)");
+      }
+    } catch (e) {
+      const message =
+        e instanceof ApiError
+          ? e.message
+          : e instanceof Error
+            ? e.message
+            : "로그인에 실패했습니다.";
+      Alert.alert(
+        "로그인 실패",
+        `${message}\n\nredirect URI: ${getOAuthRedirectUri(pendingProvider)}\n\n백엔드 KAKAO/GOOGLE_REDIRECT_URI와 카카오·구글 콘솔에 위 URI가 등록돼 있어야 합니다.\nOAuth 키가 없으면 「개발용 임시 로그인」을 사용하세요.`
+      );
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
     <>
       <View style={styles.container}>
-        {PROVIDERS.map(({ id, label, bg, text, emoji }) => (
+        {PROVIDERS.map(({ id, label, bg, text, emoji, border }) => (
           <Pressable
             key={id}
-            style={[styles.btn, { backgroundColor: bg }]}
+            style={[
+              styles.btn,
+              { backgroundColor: bg },
+              border ? { borderWidth: 1, borderColor: border } : null,
+              loading ? styles.btnDisabled : null,
+            ]}
+            disabled={loading}
             onPress={() => {
               setPendingProvider(id);
               setShowTerms(true);
@@ -59,6 +107,9 @@ export function SocialLoginButtons() {
             <Text style={[styles.btnText, { color: text }]}>{label}</Text>
           </Pressable>
         ))}
+        {loading && (
+          <ActivityIndicator color={colors.saferoom[600]} style={styles.loader} />
+        )}
       </View>
       <TermsModal
         visible={showTerms}
@@ -149,6 +200,8 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     paddingVertical: 14,
   },
+  btnDisabled: { opacity: 0.6 },
+  loader: { marginTop: 4 },
   emoji: { fontSize: 16 },
   btnText: { fontSize: 14, fontWeight: "700" },
   overlay: {

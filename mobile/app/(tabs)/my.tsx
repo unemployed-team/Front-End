@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import {
   View,
   Text,
@@ -6,26 +6,126 @@ import {
   TextInput,
   ScrollView,
   StyleSheet,
+  ActivityIndicator,
+  Alert,
 } from "react-native";
 import { useRouter } from "expo-router";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { Header } from "@/components/layout/Header";
 import { useAuthStore } from "@/store/auth-store";
-import { useAppStore } from "@/store/app-store";
-import { SafeRoomEngine } from "@/ai";
-import { simulateAuctionRecovery } from "@/ai/simulator/auction-recovery";
-import { formatCurrency, getDaysUntil } from "@/lib/utils";
-import { DashboardAlertsPanel } from "@/components/my/DashboardAlertsPanel";
+import { logoutApi } from "@/lib/api/auth";
+import { getMyBookmarks } from "@/lib/api/bookmarks";
+import {
+  getMyContracts,
+  registerContract,
+  updateContract,
+  deleteContract,
+  simulateContract,
+} from "@/lib/api/contracts";
+import type { ContractResponse, SimulationResponse } from "@/lib/api/types";
+import { formatCurrency } from "@/lib/utils";
 import { colors } from "@/theme/colors";
+import {
+  BuildingSearchPicker,
+  DateField,
+  type SelectedBuilding,
+} from "@/components/contract/BuildingSearchPicker";
 
 export default function MyScreen() {
   const router = useRouter();
   const { user, isAuthenticated, logout } = useAuthStore();
-  const { bookmarks, contracts } = useAppStore();
+  const [bookmarkCount, setBookmarkCount] = useState(0);
+  const [contracts, setContracts] = useState<ContractResponse[]>([]);
+  const [simulations, setSimulations] = useState<
+    Record<number, SimulationResponse>
+  >({});
   const [showContractForm, setShowContractForm] = useState(false);
+  const [editingContract, setEditingContract] = useState<ContractResponse | null>(
+    null
+  );
+  const [loading, setLoading] = useState(false);
 
-  const dashboardAlerts = SafeRoomEngine.screenAlerts({ contracts, bookmarks });
+  const loadData = useCallback(async () => {
+    setLoading(true);
+    try {
+      const [bookmarks, contractList] = await Promise.all([
+        getMyBookmarks(),
+        getMyContracts(),
+      ]);
+      setBookmarkCount(bookmarks.length);
+      setContracts(contractList);
+
+      const simEntries = await Promise.all(
+        contractList.map(async (c) => {
+          try {
+            const sim = await simulateContract(c.contractId);
+            return [c.contractId, sim] as const;
+          } catch {
+            return null;
+          }
+        })
+      );
+      const simMap: Record<number, SimulationResponse> = {};
+      for (const entry of simEntries) {
+        if (entry) simMap[entry[0]] = entry[1];
+      }
+      setSimulations(simMap);
+    } catch {
+      setBookmarkCount(0);
+      setContracts([]);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (isAuthenticated) loadData();
+  }, [isAuthenticated, loadData]);
+
+  const handleDeleteContract = (contractId: number) => {
+    Alert.alert("계약 삭제", "이 계약을 삭제할까요?", [
+      { text: "취소", style: "cancel" },
+      {
+        text: "삭제",
+        style: "destructive",
+        onPress: async () => {
+          try {
+            await deleteContract(contractId);
+            if (editingContract?.contractId === contractId) {
+              setEditingContract(null);
+              setShowContractForm(false);
+            }
+            await loadData();
+          } catch (e) {
+            Alert.alert(
+              "삭제 실패",
+              e instanceof Error ? e.message : "계약 삭제에 실패했습니다."
+            );
+          }
+        },
+      },
+    ]);
+  };
+
+  const openCreateForm = () => {
+    setEditingContract(null);
+    setShowContractForm(true);
+  };
+
+  const openEditForm = (contract: ContractResponse) => {
+    setEditingContract(contract);
+    setShowContractForm(true);
+  };
+
+  const handleLogout = async () => {
+    try {
+      await logoutApi();
+    } catch {
+      // ignore
+    }
+    logout();
+  };
 
   if (!isAuthenticated) {
     return (
@@ -59,7 +159,10 @@ export default function MyScreen() {
           </Pressable>
         }
       />
-      <ScrollView contentContainerStyle={styles.content}>
+      <ScrollView
+        contentContainerStyle={styles.content}
+        keyboardShouldPersistTaps="handled"
+      >
         <View style={styles.profileCard}>
           <Text style={styles.nickname}>{user?.nickname}</Text>
           <Text style={styles.email}>{user?.email}</Text>
@@ -70,8 +173,6 @@ export default function MyScreen() {
           )}
         </View>
 
-        <DashboardAlertsPanel alerts={dashboardAlerts} />
-
         <Pressable
           style={styles.menuItem}
           onPress={() => router.push("/my/bookmarks")}
@@ -79,7 +180,7 @@ export default function MyScreen() {
           <Ionicons name="bookmark" size={20} color={colors.saferoom[600]} />
           <View style={styles.menuText}>
             <Text style={styles.menuTitle}>관심 건물</Text>
-            <Text style={styles.menuSub}>{bookmarks.length}개 저장됨</Text>
+            <Text style={styles.menuSub}>{bookmarkCount}개 저장됨</Text>
           </View>
           <Ionicons name="chevron-forward" size={16} color={colors.slate[400]} />
         </Pressable>
@@ -91,7 +192,16 @@ export default function MyScreen() {
               <Text style={styles.menuTitle}>내 계약 관리</Text>
               <Text style={styles.menuSub}>{contracts.length}건 등록</Text>
             </View>
-            <Pressable onPress={() => setShowContractForm(!showContractForm)}>
+            <Pressable
+              onPress={() => {
+                if (showContractForm) {
+                  setShowContractForm(false);
+                  setEditingContract(null);
+                } else {
+                  openCreateForm();
+                }
+              }}
+            >
               <Text style={styles.addBtn}>
                 {showContractForm ? "닫기" : "+ 등록"}
               </Text>
@@ -99,42 +209,74 @@ export default function MyScreen() {
           </View>
 
           {showContractForm && (
-            <ContractForm onClose={() => setShowContractForm(false)} />
+            <ContractForm
+              key={editingContract?.contractId ?? "new"}
+              initialContract={editingContract}
+              onClose={() => {
+                setShowContractForm(false);
+                setEditingContract(null);
+              }}
+              onSuccess={loadData}
+            />
+          )}
+
+          {loading && contracts.length === 0 && (
+            <ActivityIndicator color={colors.saferoom[600]} style={{ marginTop: 12 }} />
           )}
 
           {contracts.map((contract) => {
-            const simulation = simulateAuctionRecovery({
-              deposit: contract.deposit,
-              officialPrice: contract.deposit * 1.6,
-              seniorMortgage: contract.deposit * 0.4,
-              auctionBidRate: 0,
-              region: "대구",
-              moveInDate: contract.startDate,
-              contractDate: contract.startDate,
-            });
-            const daysLeft = getDaysUntil(contract.endDate);
+            const simulation = simulations[contract.contractId];
+            const daysLeft = contract.daysUntilExpiry;
+            const recoveryRate = simulation
+              ? simulation.recoveryRate <= 1
+                ? Math.round(simulation.recoveryRate * 100)
+                : Math.round(simulation.recoveryRate)
+              : null;
             const recoveryColor =
-              simulation.depositRecoveryRate >= 80
-                ? colors.risk.safe
-                : simulation.depositRecoveryRate >= 50
-                  ? colors.risk.caution
-                  : colors.risk.danger;
+              recoveryRate == null
+                ? colors.slate[500]
+                : recoveryRate >= 80
+                  ? colors.risk.safe
+                  : recoveryRate >= 50
+                    ? colors.risk.caution
+                    : colors.risk.danger;
 
             return (
-              <View key={contract.id} style={styles.contractItem}>
-                <Text style={styles.contractAddress}>
-                  {contract.building.roadAddress}
-                </Text>
+              <View key={contract.contractId} style={styles.contractItem}>
+                <View style={styles.contractRow}>
+                  <Text style={[styles.contractAddress, styles.contractAddressFlex]}>
+                    {contract.roadAddress}
+                  </Text>
+                  <View style={styles.contractActions}>
+                    <Pressable
+                      onPress={() => openEditForm(contract)}
+                      style={styles.actionBtn}
+                    >
+                      <Ionicons name="pencil" size={14} color={colors.saferoom[600]} />
+                    </Pressable>
+                    <Pressable
+                      onPress={() => handleDeleteContract(contract.contractId)}
+                      style={styles.actionBtn}
+                    >
+                      <Ionicons name="trash-outline" size={14} color={colors.risk.danger} />
+                    </Pressable>
+                  </View>
+                </View>
                 <Text style={styles.contractMeta}>
                   보증금 {formatCurrency(contract.deposit)} · D-{daysLeft}
                 </Text>
-                <Text style={styles.recovery}>
-                  예상 회수율{" "}
-                  <Text style={{ color: recoveryColor, fontWeight: "700" }}>
-                    {simulation.depositRecoveryRate}%
+                {contract.expiryAlert && (
+                  <Text style={styles.expiryAlert}>{contract.expiryAlert}</Text>
+                )}
+                {recoveryRate != null && (
+                  <Text style={styles.recovery}>
+                    예상 회수율{" "}
+                    <Text style={{ color: recoveryColor, fontWeight: "700" }}>
+                      {recoveryRate}%
+                    </Text>
                   </Text>
-                </Text>
-                {simulation.expectedLoss > 0 && (
+                )}
+                {simulation && simulation.expectedLoss > 0 && (
                   <Text style={styles.loss}>
                     예상 손실 {formatCurrency(simulation.expectedLoss)}
                   </Text>
@@ -144,7 +286,7 @@ export default function MyScreen() {
           })}
         </View>
 
-        <Pressable style={styles.logoutBtn} onPress={logout}>
+        <Pressable style={styles.logoutBtn} onPress={handleLogout}>
           <Text style={styles.logoutText}>로그아웃</Text>
         </Pressable>
       </ScrollView>
@@ -152,47 +294,76 @@ export default function MyScreen() {
   );
 }
 
-function ContractForm({ onClose }: { onClose: () => void }) {
-  const { addContract } = useAppStore();
-  const [deposit, setDeposit] = useState("");
-  const [address, setAddress] = useState("");
-  const [endDate, setEndDate] = useState("");
+function ContractForm({
+  initialContract,
+  onClose,
+  onSuccess,
+}: {
+  initialContract?: ContractResponse | null;
+  onClose: () => void;
+  onSuccess: () => void;
+}) {
+  const isEdit = initialContract != null;
+  const [selectedBuilding, setSelectedBuilding] = useState<SelectedBuilding | null>(
+    initialContract
+      ? {
+          buildingId: initialContract.buildingId,
+          label: initialContract.roadAddress,
+        }
+      : null
+  );
+  const [deposit, setDeposit] = useState(
+    initialContract ? String(initialContract.deposit) : ""
+  );
+  const [contractStart, setContractStart] = useState(
+    initialContract?.contractStart ?? ""
+  );
+  const [contractEnd, setContractEnd] = useState(
+    initialContract?.contractEnd ?? ""
+  );
+  const [submitting, setSubmitting] = useState(false);
 
-  const handleSubmit = () => {
-    if (!address || !deposit || !endDate) return;
-    addContract({
-      id: `contract-${Date.now()}`,
-      buildingId: "bld-001",
-      building: {
-        id: "bld-001",
-        pnu: "",
-        roadAddress: address,
-        jibunAddress: address,
-        lat: 35.87,
-        lng: 128.6,
-        buildingType: "oneroom",
-        buildYear: 2000,
-        floors: 5,
-        householdCount: 10,
-        isViolation: false,
-        adminDong: "",
-      },
-      deposit: Number(deposit.replace(/,/g, "")),
-      monthlyRent: 0,
-      startDate: new Date().toISOString().split("T")[0],
-      endDate,
-      hasMonthlyRent: false,
-    });
-    onClose();
+  const handleSubmit = async () => {
+    if (!selectedBuilding) {
+      Alert.alert("건물 선택", "건물을 검색해서 선택해 주세요.");
+      return;
+    }
+    if (!deposit || !contractStart || !contractEnd) return;
+    setSubmitting(true);
+    try {
+      const payload = {
+        buildingId: selectedBuilding.buildingId,
+        deposit: Number(deposit.replace(/,/g, "")),
+        monthlyRent: initialContract?.monthlyRent ?? 0,
+        contractStart,
+        contractEnd,
+      };
+      if (isEdit && initialContract) {
+        await updateContract(initialContract.contractId, payload);
+      } else {
+        await registerContract(payload);
+      }
+      onSuccess();
+      onClose();
+    } catch (e) {
+      Alert.alert(
+        isEdit ? "수정 실패" : "등록 실패",
+        e instanceof Error
+          ? e.message
+          : isEdit
+            ? "계약 수정에 실패했습니다."
+            : "계약 등록에 실패했습니다."
+      );
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   return (
     <View style={styles.form}>
-      <TextInput
-        value={address}
-        onChangeText={setAddress}
-        placeholder="건물 주소"
-        style={styles.input}
+      <BuildingSearchPicker
+        value={selectedBuilding}
+        onChange={setSelectedBuilding}
       />
       <TextInput
         value={deposit}
@@ -201,14 +372,26 @@ function ContractForm({ onClose }: { onClose: () => void }) {
         keyboardType="numeric"
         style={styles.input}
       />
-      <TextInput
-        value={endDate}
-        onChangeText={setEndDate}
-        placeholder="만기일 (YYYY-MM-DD)"
-        style={styles.input}
+      <DateField
+        label="계약 시작일"
+        value={contractStart}
+        onChange={setContractStart}
       />
-      <Pressable style={styles.submitBtn} onPress={handleSubmit}>
-        <Text style={styles.submitText}>계약 등록</Text>
+      <DateField label="만기일" value={contractEnd} onChange={setContractEnd} />
+      <Pressable
+        style={[styles.submitBtn, submitting && { opacity: 0.5 }]}
+        onPress={handleSubmit}
+        disabled={submitting}
+      >
+        <Text style={styles.submitText}>
+          {submitting
+            ? isEdit
+              ? "수정 중..."
+              : "등록 중..."
+            : isEdit
+              ? "계약 수정"
+              : "계약 등록"}
+        </Text>
       </Pressable>
     </View>
   );
@@ -247,16 +430,6 @@ const styles = StyleSheet.create({
   nickname: { fontSize: 18, fontWeight: "700", color: colors.slate[900] },
   email: { fontSize: 14, color: colors.slate[500], marginTop: 2 },
   region: { fontSize: 12, color: colors.saferoom[600], marginTop: 4 },
-  alertCard: {
-    borderWidth: 1,
-    borderColor: "rgba(245,158,11,0.3)",
-    backgroundColor: "rgba(245,158,11,0.05)",
-    borderRadius: 12,
-    padding: 16,
-  },
-  alertHeader: { flexDirection: "row", alignItems: "center", gap: 8 },
-  alertTitle: { fontSize: 14, fontWeight: "600", color: colors.risk.caution },
-  alertItem: { fontSize: 12, color: colors.slate[700], marginTop: 4 },
   menuItem: {
     flexDirection: "row",
     alignItems: "center",
@@ -287,8 +460,27 @@ const styles = StyleSheet.create({
     backgroundColor: colors.slate[50],
     padding: 12,
   },
+  contractRow: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    justifyContent: "space-between",
+    gap: 8,
+  },
+  contractAddressFlex: { flex: 1 },
+  contractActions: { flexDirection: "row", gap: 4 },
+  actionBtn: {
+    padding: 4,
+    borderRadius: 6,
+    backgroundColor: colors.white,
+  },
   contractAddress: { fontSize: 12, fontWeight: "600", color: colors.slate[900] },
   contractMeta: { fontSize: 12, color: colors.slate[600], marginTop: 4 },
+  expiryAlert: {
+    fontSize: 12,
+    fontWeight: "500",
+    color: colors.risk.caution,
+    marginTop: 4,
+  },
   recovery: { fontSize: 12, color: colors.slate[500], marginTop: 8 },
   loss: { fontSize: 12, color: colors.risk.danger, marginTop: 4 },
   form: {
